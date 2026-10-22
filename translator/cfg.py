@@ -4,6 +4,15 @@ Code is found by recursive traversal from the entry points, never by a linear
 sweep, so data bytes are never decoded. Every address that can be reached
 through the jump table at runtime (call targets, return sites, interrupt
 vectors, resume points) becomes an entry and gets its own WASM function.
+
+Banked ROMs: code in 0x4000-0x7FFF is identified by a key that includes its bank,
+the same number the runtime's $slot computes from PC and the mapped bank:
+    key = addr                                   outside 0x4000-0x7FFF
+    key = 0x10000 + bank * 0x4000 + (addr & 0x3FFF)   inside it
+Code in a bank jumps freely inside its own bank. A jump from bank 0 (or RAM) into
+0x4000-0x7FFF always leaves through the jump table, so the bank mapped at runtime
+decides where it lands. Its target bank is taken from a constant bank switch seen
+earlier on the same path (`ld a,n` then `ld ($2000-$3FFF),a`), or from hints.
 """
 from dataclasses import dataclass, field
 
@@ -11,6 +20,73 @@ from .decoder import ALL_FLAGS, DecodeError, decode
 
 CART_ENTRY = 0x0100
 IRQ_VECTORS = (0x40, 0x48, 0x50, 0x58, 0x60)
+
+# Cartridge header byte 0x147 -> MBC family; 0x149 -> number of 8 KiB RAM banks.
+MBC_OF = {0x00: 0, 0x08: 0, 0x09: 0, 0x01: 1, 0x02: 1, 0x03: 1,
+          0x0F: 3, 0x10: 3, 0x11: 3, 0x12: 3, 0x13: 3,
+          0x19: 5, 0x1A: 5, 0x1B: 5, 0x1C: 5, 0x1D: 5, 0x1E: 5}
+RAM_BANKS_OF = {0: 0, 1: 1, 2: 1, 3: 4, 4: 16, 5: 8}
+
+# Instructions that leave A unchanged (for tracking `ld a,n` into a bank switch).
+KEEPS_A = frozenset(("nop", "st_ind_a", "st_a16_a", "st_c_a", "ld_rp_d16", "inc_rp", "dec_rp",
+                     "push", "di", "ei", "ld_a16_sp", "ld_sp_hl", "add_hl_rp", "cb_bit",
+                     "scf", "ccf", "add_sp_e", "ld_hl_sp_e"))
+
+
+def in_window(addr):
+    return 0x4000 <= addr < 0x8000
+
+
+def key(bank, addr):
+    return 0x10000 + bank * 0x4000 + (addr & 0x3FFF) if in_window(addr) else addr
+
+
+def fmt_key(k):
+    return f"{(k - 0x10000) >> 14:02X}:{0x4000 + (k & 0x3FFF):04X}" if k >= 0x10000 else f"{k:04X}"
+
+
+def parse_key(text):
+    """'4A20' (bank 1 if banked) or '05:4A20'."""
+    bank, _, addr = text.rpartition(":")
+    return key(int(bank, 16) if bank else 1, int(addr, 16))
+
+
+class Cart:
+    def __init__(self, rom):
+        self.rom = rom
+        ctype = rom[0x147] if len(rom) > 0x147 else 0
+        if ctype not in MBC_OF:
+            raise TranslateError(f"cartridge type {ctype:#04x} is not supported (ROM-only, MBC1, MBC3, MBC5)")
+        self.mbc = MBC_OF[ctype]
+        self.banks = 2
+        while self.banks * 0x4000 < len(rom):
+            self.banks *= 2
+        self.ram_banks = RAM_BANKS_OF.get(rom[0x149] if len(rom) > 0x149 else 0, 0)
+        if self.mbc == 0:
+            self.ram_banks = 0
+        self.table = 0x10000 + self.banks * 0x4000
+
+
+class BankView:
+    """The 64 KiB address space as seen with `bank` mapped at 0x4000-0x7FFF."""
+    def __init__(self, image, rom, bank):
+        self.image, self.rom, self.bank = image, rom, bank
+
+    def __len__(self):
+        return 0x10000
+
+    def _byte(self, a):
+        if in_window(a):
+            off = self.bank * 0x4000 + (a - 0x4000)
+            if off >= len(self.rom):
+                raise DecodeError(f"bank {self.bank:02X} address {a:04X} is past the end of the ROM")
+            return self.rom[off]
+        return self.image[a]
+
+    def __getitem__(self, i):
+        if isinstance(i, slice):
+            return bytes(self._byte(a) for a in range(i.start, i.stop))
+        return self._byte(i)
 
 
 class TranslateError(Exception):
@@ -26,9 +102,6 @@ class Block:
     def last(self):
         return self.instrs[-1]
 
-    @property
-    def end(self):
-        return self.last.next
 
 
 @dataclass
@@ -47,24 +120,52 @@ class Program:
     soft: set               # loop heads: inside other functions, but resumable
     blocks: dict            # start -> Block
     functions: list
-    unresolved: set         # jump-table targets with no code we could decode
+    unresolved: set         # jump-table targets with no code we could decode (keys)
+    cart: Cart = None
+    unknown_bank: set = field(default_factory=set)   # 0x4000-0x7FFF targets from bank 0, bank unknown
+
+    def key_of(self, ins, addr):
+        """Key of `addr` reached from `ins` without a bank switch; None if the bank is unknown."""
+        if not in_window(addr):
+            return addr
+        return key(ins.bank, addr) if ins.bank is not None else None
 
 
 def discover(rom, ram_code=(), entries=()):
     """ram_code: (ram_addr, rom_src, length) routines the game copies to RAM.
-    entries: extra jump-table entries, e.g. JP (HL) targets reported by a trap."""
+    entries: extra jump-table entries as keys, e.g. JP (HL) targets reported by a trap."""
+    cart = Cart(rom)
     image = bytearray(0x10000)
-    image[:min(len(rom), 0x8000)] = rom[:0x8000]
-    code_ok = [i < min(len(rom), 0x8000) for i in range(0x10000)]
+    image[:min(len(rom), 0x4000)] = rom[:0x4000]
+    code_ok = [i < min(len(rom), 0x4000) for i in range(0x10000)]
     hard = {CART_ENTRY, *entries}
     for ram_addr, src, length in ram_code:
         image[ram_addr:ram_addr + length] = rom[src:src + length]
         for i in range(ram_addr, ram_addr + length):
             code_ok[i] = True
         hard.add(ram_addr)
+    views = {}
 
-    instrs, owner, soft, unresolved = {}, {}, set(), set()
-    work = sorted(hard)
+    def view(bank):
+        if bank not in views:
+            views[bank] = BankView(image, rom, bank if bank is not None else 1)
+        return views[bank]
+
+    def bank_of(k):
+        return (k - 0x10000) >> 14 if k >= 0x10000 else None
+
+    def addr_of(k):
+        return 0x4000 + (k & 0x3FFF) if k >= 0x10000 else k
+
+    def valid(k):
+        if k >= 0x10000:
+            return bank_of(k) < cart.banks and bank_of(k) * 0x4000 + (k & 0x3FFF) < len(rom)
+        return code_ok[k]
+
+    default_bank = 1 if cart.mbc == 0 else None
+    instrs, owner, soft, unresolved, unknown_bank = {}, {}, set(), set(), set()
+    # Work items: (key, bank switched to by a constant earlier on this path, constant in A).
+    work = [(k, None, None) for k in sorted(hard)]
     # Interrupt vectors are only code if the game can enable interrupts; otherwise they
     # are usually padding. A vector that fails to decode is left unresolved.
     optional, vectors_added = set(IRQ_VECTORS), False
@@ -74,71 +175,109 @@ def discover(rom, ram_code=(), entries=()):
             vectors_added = True
             if any(i.kind in ("ei", "reti") for i in instrs.values()):
                 hard.update(IRQ_VECTORS)
-                work.extend(IRQ_VECTORS)
+                work.extend((v, None, None) for v in IRQ_VECTORS)
             continue
-        a = work.pop()
-        if a in instrs:
+        k, hint, a_const = work.pop()
+        if k in instrs:
             continue
-        if not code_ok[a]:
-            unresolved.add(a)
+        if not valid(k):
+            unresolved.add(k)
             continue
+        bank, a = bank_of(k), addr_of(k)
         try:
-            ins = decode(image, a)
+            ins = decode(view(bank), a)
         except DecodeError:
-            if a in optional:
-                unresolved.add(a)
+            if k in optional:
+                unresolved.add(k)
                 continue
             raise
-        for i in range(a, a + ins.length):
-            if i in owner and owner[i] != a:
-                raise TranslateError(f"overlapping instructions at {a:04X} and {owner[i]:04X}")
-            owner[i] = a
-        instrs[a] = ins
-        optional.discard(a)
+        ins.bank, ins.key = bank, k
+        span = [key(bank, i) if bank is not None else i for i in range(a, a + ins.length)]
+        clash = next((owner[bk] for bk in span if bk in owner and owner[bk] != k), None)
+        if clash is not None:
+            if k in optional:                 # a vector inside another handler's code
+                unresolved.add(k)
+                continue
+            raise TranslateError(f"overlapping instructions at {fmt_key(k)} and {fmt_key(clash)}")
+        for bk in span:
+            owner[bk] = k
+        instrs[k] = ins
+        optional.discard(k)
+
+        # Track a constant ROM bank switch along this path.
+        if ins.kind == "ld_r_d8" and ins.args[0] == "a":
+            a_const = ins.args[1]
+        elif ins.kind == "st_a16_a" and 0x2000 <= ins.args[0] < 0x4000 and a_const is not None:
+            hint = a_const & (cart.banks - 1)
+            if cart.mbc in (1, 3) and hint == 0:
+                hint = 1
+        elif ins.kind not in KEEPS_A and not (ins.kind in ("ld_r_d8", "ld_r_r", "inc_r", "dec_r")
+                                             and ins.args[0] != "a"):
+            a_const = None
+
+        def follow(addr, as_entry=False):
+            if in_window(addr) and bank is None:          # bank 0 / RAM into the switchable bank
+                tb = hint if hint is not None else default_bank
+                if tb is None:
+                    unknown_bank.add(addr)
+                    return
+                tk = key(tb, addr)
+                hard.add(tk)
+                work.append((tk, hint, None))
+                return
+            tk = key(bank, addr) if bank is not None else addr
+            if as_entry:
+                hard.add(tk)
+            work.append((tk, hint, a_const))
+            return tk
 
         if ins.flow in ("next", "branch", "cexit"):
-            work.append(ins.next)
+            follow(ins.next)
         if ins.flow in ("jump", "branch"):
-            work.append(ins.target)
-            if ins.target <= a:
-                soft.add(ins.target)
+            tk = follow(ins.target)
+            if tk is not None and tk <= k:
+                soft.add(tk)
         if ins.kind == "call":
-            hard.update((ins.target, ins.next))
-            work.extend((ins.target, ins.next))
+            follow(ins.target, as_entry=True)
+            follow(ins.next, as_entry=True)
         elif ins.kind in ("halt", "stop"):
-            hard.add(ins.next)
-            work.append(ins.next)
+            follow(ins.next, as_entry=True)
         elif ins.kind == "jp_hl":
             # LD HL,nn right before JP (HL) gives a target known at build time.
-            prev = instrs.get(a - 3)
+            prev = instrs.get(k - 3)
             if prev and prev.kind == "ld_rp_d16" and prev.args[0] == "hl":
-                hard.add(prev.args[1])
-                work.append(prev.args[1])
+                follow(prev.args[1], as_entry=True)
+        elif ins.kind == "st_a16_a" and ins.args[0] < 0x8000 and bank is not None:
+            # Banked code switching banks: continue through the jump table so the
+            # newly mapped bank decides what runs next.
+            follow(ins.next, as_entry=True)
 
     hard = {a for a in hard if a in instrs}
     soft = {a for a in soft if a in instrs} - hard
+    prog = Program(image, instrs, hard, soft, {}, [], unresolved, cart, unknown_bank)
 
     leaders = set(hard) | soft
     for ins in instrs.values():
-        if ins.flow in ("jump", "branch") and ins.target in instrs:
-            leaders.add(ins.target)
+        if ins.flow in ("jump", "branch"):
+            tk = prog.key_of(ins, ins.target)
+            if tk in instrs:
+                leaders.add(tk)
         if ins.flow in ("branch", "cexit"):
-            leaders.add(ins.next)
+            leaders.add(prog.key_of(ins, ins.next))
 
-    blocks = {}
     for start in sorted(leaders):
         if start not in instrs:
             continue
-        b, a = Block(start), start
+        b, k = Block(start), start
         while True:
-            ins = instrs[a]
+            ins = instrs[k]
             b.instrs.append(ins)
-            if ins.flow != "next" or ins.next in leaders or ins.next not in instrs:
+            nk = prog.key_of(ins, ins.next)
+            if ins.flow != "next" or nk in leaders or nk not in instrs:
                 break
-            a = ins.next
-        blocks[start] = b
+            k = nk
+        prog.blocks[start] = b
 
-    prog = Program(image, instrs, hard, soft, blocks, [], unresolved)
     for entry in sorted(hard | soft):
         prog.functions.append(_function(prog, entry))
     return prog
@@ -149,9 +288,9 @@ def intra_successors(prog, fn_entry, block):
     ins, out = block.last, []
     cands = []
     if ins.flow in ("next", "branch", "cexit"):
-        cands.append(ins.next)
+        cands.append(prog.key_of(ins, ins.next))
     if ins.flow in ("jump", "branch"):
-        cands.append(ins.target)
+        cands.append(prog.key_of(ins, ins.target))
     for t in cands:
         if t in prog.blocks and (t not in prog.hard or t == fn_entry):
             out.append(t)

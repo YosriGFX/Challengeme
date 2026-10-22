@@ -7,7 +7,7 @@ the next GB address to the jump table in the runtime.
 """
 from pathlib import Path
 
-from .cfg import intra_successors
+from .cfg import fmt_key, intra_successors
 
 RUNTIME = Path(__file__).with_name("runtime.wat")
 REG8 = ("a", "b", "c", "d", "e", "h", "l")
@@ -148,13 +148,14 @@ class FunctionEmitter:
 
     def goto(self, target):
         """Transfer to `target` after cycles were flushed."""
-        idx = self.fn.index.get(target)
-        intra = idx is not None and (target not in self.prog.hard or target == self.fn.entry)
+        tk = self.prog.key_of(self.ins, target)
+        idx = self.fn.index.get(tk)
+        intra = idx is not None and (tk not in self.prog.hard or tk == self.fn.entry)
         if not intra:
             self.exit_to(k(target))
             return
         self.set("lbl", k(idx))
-        if target <= self.ins.addr:   # back-edge: yield when the deadline is reached
+        if tk <= self.ins.key:   # back-edge: yield when the deadline is reached
             self.out(f"(if {op('ge_s', op('sub', g('cyc'), '(global.get $DEADLINE)'), k(0))} "
                      f"(then (local.set $nx {k(target)}) (br $out)))")
         self.out("(br $sw)")
@@ -162,7 +163,7 @@ class FunctionEmitter:
     # ---- per-instruction templates ----
     def emit_instr(self, ins):
         self.ins, self.flushed = ins, False
-        self.out(f";; {ins.addr:04X}  {ins.raw.hex(' ').upper():<8}  {ins.text}")
+        self.out(f";; {fmt_key(ins.key)}  {ins.raw.hex(' ').upper():<8}  {ins.text}")
         getattr(self, "i_" + ins.kind)(*ins.args)
         if ins.flow == "next":
             self.pend += ins.cycles
@@ -462,14 +463,14 @@ class FunctionEmitter:
             last = block.last
             if last.flow in ("next", "branch", "cexit"):
                 self.flush(0)
-                nxt = last.next
+                nxt = self.prog.key_of(last, last.next)
                 succ = intra_successors(self.prog, fn.entry, block)
                 follows = label + 1 < len(fn.blocks) and fn.blocks[label + 1].start == nxt
-                if nxt in succ and follows and nxt > last.addr:
+                if nxt in succ and follows and nxt > last.key:
                     pass                                   # falls into the next label
                 else:
-                    self.goto(nxt)
-            self.lines.insert(body_start, f"    ;; ---- block {block.start:04X} (label {label})")
+                    self.goto(last.next)
+            self.lines.insert(body_start, f"    ;; ---- block {fmt_key(block.start)} (label {label})")
             if label:
                 self.lines.insert(body_start, ")")       # closes $L<label>; its code follows
         return self.assemble()
@@ -477,7 +478,7 @@ class FunctionEmitter:
     def assemble(self):
         fn, n = self.fn, len(self.fn.blocks)
         written = sorted(self.written & set(GLOBAL_OF))
-        head = [f"  (func $f_{fn.entry:04X} (type $blk)"]
+        head = [f"  (func {fname(fn.entry)} (type $blk)"]
         head.append("    " + " ".join(f"(local ${x} i32)" for x in LOCALS))
         for x in GLOBAL_OF:
             head.append(f"    (local.set ${x} (global.get ${GLOBAL_OF[x]}))")
@@ -501,6 +502,11 @@ class FunctionEmitter:
         return head + body + tail
 
 
+def fname(key):
+    """$f_0150 for fixed addresses, $f_03_4A20 for bank 3 address 4A20."""
+    return "$f_" + fmt_key(key).replace(":", "_")
+
+
 def wat_string(data):
     return "".join(chr(b) if 0x20 <= b < 0x7F and b not in (0x22, 0x5C) else f"\\{b:02x}"
                    for b in data)
@@ -519,7 +525,10 @@ def emit_module(prog, rom):
     runtime = RUNTIME.read_text()
     runtime = runtime.replace("__PAGES__", str(pages)).replace("__ROM_LEN__", str(len(rom)))
     runtime = runtime.replace("__BANK_LEN__", str(min(len(rom), 0x8000)))
-    elems = [f"  (elem (table $jt) (i32.const {fn.entry:#06x}) func $f_{fn.entry:04X})"
+    cart = prog.cart
+    runtime = (runtime.replace("__MBC__", str(cart.mbc)).replace("__BANK_MASK__", str(cart.banks - 1))
+               .replace("__RAM_BANKS__", str(cart.ram_banks)).replace("__TABLE__", str(cart.table)))
+    elems = [f"  (elem (table $jt) (i32.const {fn.entry:#07x}) func {fname(fn.entry)})"
              for fn in prog.functions]
     text = ["(module", runtime, *funcs, *elems,
             f"  (data $rom \"{wat_string(rom)}\")", ")"]

@@ -11,18 +11,20 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .cfg import TranslateError, discover
+from .cfg import TranslateError, discover, fmt_key, parse_key
 from .decoder import DecodeError
 from .emit import emit_module
 
 
 def load_hints(path):
-    """{"entries": ["039F"], "ram_code": [{"addr": "FFB6", "rom": "2A7F", "len": 12}]}"""
+    """{"entries": ["039F", "05:4A20"], "ram_code": [{"addr": "FFB6", "rom": "2A7F", "len": 12}]}
+
+    An entry in 0x4000-0x7FFF names its ROM bank as BB:AAAA (bank 1 if left out)."""
     if not path:
         return [], []
     data = json.loads(Path(path).read_text())
     ram = [(int(h["addr"], 16), int(h["rom"], 16), int(h["len"])) for h in data.get("ram_code", [])]
-    return ram, [int(a, 16) for a in data.get("entries", [])]
+    return ram, [parse_key(a) for a in data.get("entries", [])]
 
 
 def main(argv=None):
@@ -36,9 +38,6 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     rom = args.rom.read_bytes()
-    if rom[0x147] != 0x00:
-        print(f"warning: cartridge type {rom[0x147]:#04x}; only ROM-only carts are supported yet",
-              file=sys.stderr)
     try:
         ram_code, entries = load_hints(args.hints)
         prog = discover(rom, ram_code, entries)
@@ -49,10 +48,16 @@ def main(argv=None):
 
     out = args.out or args.rom.with_suffix(".wat")
     out.write_text(wat)
+    cart = prog.cart
+    print(f"cartridge: {'ROM only' if cart.mbc == 0 else f'MBC{cart.mbc}'}, {cart.banks} ROM banks, "
+          f"{cart.ram_banks} RAM banks")
     print(f"{out}: {stats['functions']} functions, {stats['blocks']} blocks, "
           f"{stats['instructions']} instructions, {stats['dead_flags']} flag computations removed")
     for a in sorted(prog.unresolved):
-        print(f"note: no code at {a:04X} (jumps there will trap)", file=sys.stderr)
+        print(f"note: no code at {fmt_key(a)} (jumps there will trap)", file=sys.stderr)
+    for a in sorted(prog.unknown_bank):
+        print(f"note: bank 0 jumps to {a:04X} with a bank set at runtime; "
+              f"add \"BB:{a:04X}\" to the hints for each bank it can be", file=sys.stderr)
 
     if args.wasm:
         tool = shutil.which(args.wat2wasm)
