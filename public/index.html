@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Challenge Me</title>
+  <link rel="modulepreload" href="/gb/machine.js">
+  <style>
+    :root { color-scheme: dark; --bg: #101418; --panel: #1b2128; --text: #e8eef2; --muted: #93a1ad; --ok: #6cd38a; --off: #e07a6a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, sans-serif; }
+    header { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; padding: 16px 24px; }
+    h1 { margin: 0; font-size: 20px; }
+    #status { color: var(--muted); }
+    main { display: flex; flex-wrap: wrap; justify-content: center; gap: 24px; padding: 8px 16px 24px; }
+    section { background: var(--panel); border-radius: 12px; padding: 16px; width: min(100%, 520px); }
+    section h2 { display: flex; justify-content: space-between; margin: 0 0 12px; font-size: 16px; }
+    .pad { font-weight: normal; color: var(--off); }
+    .pad.on { color: var(--ok); }
+    canvas { display: block; width: 100%; aspect-ratio: 160 / 144; image-rendering: pixelated; background: #000; border-radius: 4px; }
+    .join { margin-top: 12px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+    .join a { color: var(--text); }
+    .keys { margin-top: 4px; font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Challenge Me</h1>
+    <span id="status">Loading…</span>
+  </header>
+  <main>
+    <section>
+      <h2>Player 1 <span class="pad" id="pad1">phone not connected</span></h2>
+      <canvas id="screen1" width="160" height="144"></canvas>
+      <div class="join">Controller: <a id="join1" href="#"></a></div>
+      <div class="keys">Keyboard: arrows, X = A, Z = B, Enter = Start, right Shift = Select</div>
+    </section>
+    <section>
+      <h2>Player 2 <span class="pad" id="pad2">phone not connected</span></h2>
+      <canvas id="screen2" width="160" height="144"></canvas>
+      <div class="join">Controller: <a id="join2" href="#"></a></div>
+      <div class="keys">Keyboard: W A S D, H = A, G = B, Y = Start, T = Select</div>
+    </section>
+  </main>
+  <script type="module" src="/host.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "challengeme",
+	"main": "src/index.js",
+	"compatibility_date": "2026-10-22",
+	"compatibility_flags": ["no_nodejs_compat", "no_nodejs_compat_v2"],
+	"upload_source_maps": true,
+	"observability": {
+		"enabled": true,
+		"logs": { "head_sampling_rate": 1 },
+		"traces": { "enabled": true, "head_sampling_rate": 0.01 }
+	},
+	"assets": {
+		"directory": "./public",
+		"not_found_handling": "404-page",
+		"run_worker_first": ["/ws/*"]
+	},
+	"durable_objects": { "bindings": [{ "name": "MATCH", "class_name": "Match" }] },
+	"exports": { "Match": { "type": "durable-object", "storage": "sqlite" } },
+	// The page origin allowed to open match sockets. Set it to the deployed origin
+	// (e.g. "https://challengeme.<account>.workers.dev") for production.
+	"vars": { "APP_ORIGIN": "http://localhost:8787" }
+}

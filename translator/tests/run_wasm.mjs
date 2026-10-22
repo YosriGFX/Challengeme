@@ -2,7 +2,8 @@
 // state, memory ranges and (with --fb) the front framebuffer as JSON. It uses the same
 // machine module as the browser worker.
 //   node run_wasm.mjs game.wasm <frames> [hexStart:len ...] [--fb] [--buttons=HEX]
-//   node run_wasm.mjs --link a.wasm b.wasm <frames> [hexStart:len ...]
+//   node run_wasm.mjs --link a.wasm b.wasm <frames> [hexStart:len ...] [--buttons=HEX]
+// --buttons holds the joypad bits of the first machine (bit 0 Right ... bit 7 Start).
 import { readFileSync } from "node:fs";
 import { FRAME_CYCLES, GameBoy, memoryPages, runLinked } from "../../public/gb/machine.js";
 

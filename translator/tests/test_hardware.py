@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tools import make_link_demo_rom
 from tools.make_hello_rom import GLYPHS, MESSAGE, MSG_COL, MSG_ROW
 from translator.tests.romkit import TOOLS, build_rom, frame_from_shades, h, run, translate, write_png
 
@@ -178,6 +179,14 @@ class HardwareTest(unittest.TestCase):
         m, s = (x["dump"]["C000"] for x in res["machines"])
         self.assertEqual((m[0], s[0]), (0x99, 0x42), "bytes swapped over the cable")
         self.assertTrue(m[1] & 8 and s[1] & 8, "serial interrupt requested on both sides")
+
+    def test_link_demo_shows_partner_buttons(self):
+        demo = self.wasm(make_link_demo_rom.build(), "linkdemo")
+        res = run("--link", demo, demo, 6, "FF80:2", "FF47:1", "--buttons=10")    # player 1 holds A
+        p1, p2 = (x["dump"] for x in res["machines"])
+        self.assertEqual(p1["FF80"], [1, 0], "player 1 took the clock; player 2 is idle")
+        self.assertEqual(p2["FF80"], [0, 0x01], "player 2 received A from player 1")
+        self.assertEqual((p1["FF47"], p2["FF47"]), ([0x2C], [0x34]), "dark half = held buttons")
 
     def test_serial_without_partner_reads_ff(self):
         res = run(self.wasm(serial_rom(0x42, 0x81), "alone"), 1, "C000:1")
