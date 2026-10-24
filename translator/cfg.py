@@ -208,20 +208,70 @@ def discover(rom, ram_code=(), entries=()):
     def inline_table(bank, at):
         """Code addresses listed as 16-bit words from `at`. The table ends at the first word
         that cannot be a code address, or where an entry says code starts."""
-        out, end = [], 0x10000
+        out, end, zeros = [], 0x10000, 0
         while at < end and len(out) < 256:
             tk0 = key(bank, at) if bank is not None else at
             if tk0 in owner or not valid(tk0) or not valid(key(bank, at + 1) if bank is not None else at + 1):
                 break
             w = rom[at] | (rom[at + 1] << 8) if bank is None or not in_window(at) else \
                 rom[bank * 0x4000 + (at - 0x4000)] | (rom[bank * 0x4000 + (at - 0x3FFF)] << 8)
+            if w == 0 and zeros < 8:                  # an unused slot inside the table
+                zeros += 1
+                at += 2
+                continue
             if w < 0x0100 or w >= 0x8000 or (in_window(w) and bank is None and cart.mbc != 0):
                 break
+            zeros = 0
             out.append(w)
             if at < w:
                 end = min(end, w)
             at += 2
         return out
+    def chain_before(k, limit=16):
+        """The straight-line instructions that end right before key k, nearest first."""
+        out, at = [], k
+        while len(out) < limit:
+            prev = next((instrs[at - n] for n in (1, 2, 3) if at - n in instrs
+                         and instrs[at - n].length == n), None)
+            if prev is None or (prev.flow != "next" and prev.kind != "call"):   # a call returns here
+                break
+            out.append(prev)
+            at -= prev.length
+        return out
+
+    def table_bases(before):
+        """Constant table addresses that HL was computed from, as code that indexes a table
+        of code addresses does it: `ld hl,table` (maybe with a call to an index helper),
+        `ld de,table / add hl,de`, or `add a,low / ... / adc a,high`."""
+        bases, added, adc_hi = [], set(), None
+        for prev in before:
+            kind, args = prev.kind, prev.args
+            if kind == "add_hl_rp":
+                added.add(args[0])
+            elif kind == "ld_rp_d16" and (args[0] == "hl" or args[0] in added):
+                bases.append(args[1])
+                if args[0] == "hl":
+                    break
+            elif kind == "alu" and args[0] == "adc" and isinstance(args[1], int):
+                adc_hi = args[1]
+            elif kind == "alu" and args[0] == "add" and isinstance(args[1], int) and adc_hi is not None:
+                bases.append(adc_hi << 8 | args[1])
+                adc_hi = None
+        return bases
+
+    def follow_tables(bases, bank, follow):
+        for tb in bases:
+            if tb >= 0x8000:
+                continue
+            tbank = None
+            if in_window(tb):
+                tbank = bank if bank is not None else default_bank
+                if tbank is None:
+                    continue
+            # Index 0 may be unused, so the base can point into the dispatch code itself.
+            for t in inline_table(tbank, tb) or inline_table(tbank, tb + 2):
+                follow(t, as_entry=True, to=deferred, guess=True)
+
     # Interrupt vectors are only code if the game can enable interrupts; otherwise they
     # are usually padding. A vector that fails to decode is left unresolved.
     optional, vectors_added = set(IRQ_VECTORS), False
@@ -311,20 +361,26 @@ def discover(rom, ram_code=(), entries=()):
         elif ins.kind in ("halt", "stop"):
             follow(ins.next, as_entry=True)
         elif ins.kind == "jp_hl":
-            # LD HL,nn right before JP (HL) gives a target known at build time. LD HL,nn a
-            # little earlier (with a call to an indexing helper in between) is the base of
-            # a table of code addresses: `ld hl,table / call index / jp hl`.
-            for back in range(3, 13):
-                prev = instrs.get(k - back)
-                if prev and prev.kind == "ld_rp_d16" and prev.args[0] == "hl" and prev.next <= k:
-                    if back == 3:
-                        follow(prev.args[1], as_entry=True)
-                    else:
-                        tb = prev.args[1]
-                        tbank = bank if bank is not None and in_window(tb) else (default_bank if in_window(tb) else None)
-                        if tb < 0x8000 and (not in_window(tb) or tbank is not None):
-                            for t in inline_table(tbank, tb):
-                                follow(t, as_entry=True, to=deferred, guess=True)
+            before = chain_before(k)
+            if before and before[0].kind == "ld_rp_d16" and before[0].args[0] == "hl":
+                follow(before[0].args[1], as_entry=True)      # LD HL,nn right before JP (HL)
+            else:
+                follow_tables(table_bases(before), bank, follow)
+        elif ins.kind == "push":
+            # LD rr,nn / PUSH rr: nn is where a later RET goes (a return address pushed
+            # before jumping through a table).
+            before = chain_before(k, 1)
+            if before and before[0].kind == "ld_rp_d16" and before[0].args[0] == ins.args[0] \
+                    and 0x0100 <= before[0].args[1] < 0x8000:
+                follow(before[0].args[1], as_entry=True, to=deferred, guess=True)
+        elif ins.kind == "ret":
+            # PUSH HL ... RET jumps to HL, often a word from a table of code addresses.
+            before = chain_before(k)
+            for n, prev in enumerate(before):
+                if prev.kind in ("pop", "call", "ret", "push") and not (prev.kind == "push" and prev.args[0] == "hl"):
+                    break
+                if prev.kind == "push":
+                    follow_tables(table_bases(before[n + 1:]), bank, follow)
                     break
         elif ins.kind == "st_a16_a" and ins.args[0] < 0x8000 and bank is not None:
             # Banked code switching banks: continue through the jump table so the

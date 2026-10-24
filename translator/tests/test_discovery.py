@@ -36,6 +36,25 @@ HL_TABLE = rom_with({
     0x0220: MARK(0x22),
 })
 
+# add a,low / adc a,high builds the table address; the table has an unused slot.
+ADC_TABLE = rom_with({
+    0x0150: h("31FEFF 3E02 87 C600 6F 3E00 CE02 67 2A 66 6F E9"),   # hl = $0200 + 2a; hl = (hl); jp hl
+    0x0200: h("1002 0000 2002 0000"),                    # dw $0210, 0, $0220
+    0x0210: MARK(0x11),
+    0x0220: MARK(0x22),
+})
+
+# ld de,table / add hl,de, then push hl / ret jumps to the entry; the return address
+# pushed before it (ld bc,nn / push bc) is code too. Index 0 is unused, so the base
+# points into the dispatch code.
+PUSH_RET = rom_with({
+    0x0150: h("31FEFF 018001 C5 3E01 87 6F 2600 116401 19 2A 66 6F E5 C9 7001"),
+    # ld sp; ld bc,$0180; push bc; ld a,1; add a,a; ld l,a; ld h,0; ld de,$0164;
+    # add hl,de; ld a,(hl+); ld h,(hl); ld l,a; push hl; ret; dw $0170 (entry 1, at $0166)
+    0x0170: MARK(0x22),
+    0x0180: h("18FE"),
+})
+
 # The serial handler at $58 is longer than 8 bytes: its `ld a,($C4F1)` covers $60, which
 # is then not the joypad vector's code.
 LONG_HANDLER = rom_with({
@@ -63,6 +82,16 @@ class Discovery(unittest.TestCase):
         self.assertIn(0x210, prog.instrs)
         self.assertIn(0x220, prog.instrs)
         self.assertNotIn(0x200, prog.instrs)
+
+    def test_table_from_add_adc_with_unused_slot(self):
+        prog = discover(ADC_TABLE)
+        self.assertIn(0x210, prog.instrs)
+        self.assertIn(0x220, prog.instrs)
+
+    def test_push_ret_table_and_pushed_return_address(self):
+        prog = discover(PUSH_RET)
+        self.assertIn(0x170, prog.instrs)                # table entry, base + 2
+        self.assertIn(0x180, prog.instrs)                # return address pushed earlier
 
     def test_handler_running_over_next_vector(self):
         prog = discover(LONG_HANDLER)
@@ -92,6 +121,12 @@ class Dispatch(unittest.TestCase):
 
     def test_hl_table_takes_entry_a(self):
         self.assertEqual(self.entry_taken(HL_TABLE, "hl"), 0x22)
+
+    def test_adc_table_takes_entry_a(self):
+        self.assertEqual(self.entry_taken(ADC_TABLE, "adc"), 0x22)
+
+    def test_push_ret_table_takes_entry_a(self):
+        self.assertEqual(self.entry_taken(PUSH_RET, "pushret"), 0x22)
 
 
 if __name__ == "__main__":

@@ -3,6 +3,9 @@
 Ahead-of-time recompiler: Game Boy (SM83) ROM in, WebAssembly text out. Runs only on the
 developer machine; production ships the resulting `.wasm`.
 
+Step-by-step guide to translating a game, fixing traps and writing hints:
+[TRANSLATOR.md](../TRANSLATOR.md).
+
 ```sh
 python3 -m venv .venv && . .venv/bin/activate      # no third-party packages needed
 python -m translator roms/hello.gb -o build/hello.wat --wasm

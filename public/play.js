@@ -1,5 +1,5 @@
-// One player's phone: its Game Boy's buttons, and the screens of both Game Boys in the
-// match (player 1 on top, player 2 below), so the other player is never a black box. The
+// One player's phone: its Game Boy's screen and buttons, with the other player's screen
+// floating over it (picture-in-picture), so the other player is never a black box. The
 // games run on the server; this page sends button bytes and draws the updates it receives.
 import { FrameDecoder, screen } from "/frames.js";
 import { PALETTE } from "/palette.js";
@@ -29,8 +29,12 @@ const screens = [1, 2].map((n) => {
   const image = ctx.createImageData(160, 144);
   return { ctx, image, pixels32: new Uint32Array(image.data.buffer), decoder: new FrameDecoder() };
 });
-document.getElementById(`fig${player}`).classList.add("own");
-document.querySelector(`#fig${player} figcaption`).textContent = `Player ${player} · you`;
+const own = document.getElementById(`fig${player}`);
+const pip = document.getElementById(`fig${3 - player}`);
+own.classList.add("own");
+pip.classList.add("pip");
+own.querySelector("figcaption").textContent = `Player ${player} · you`;
+own.parentElement.prepend(own);
 
 function drawUpdate(buf) {
   const s = screens[screen(buf)];
@@ -41,11 +45,58 @@ function drawUpdate(buf) {
   return true;
 }
 
-// Both screens, or only this player's.
+// The other player's screen: drag to move, drag the corner dot to resize. Its place and
+// size are kept as fractions of the screen area, so they survive rotation and reloads.
+const area = pip.parentElement;
+const PIP_KEY = "pip";
+let box = { x: 1, y: 0, w: 0.36 };                    // x, y: 0 = left/top edge, 1 = right/bottom
+try { box = { ...box, ...JSON.parse(localStorage.getItem(PIP_KEY) ?? "{}") }; } catch { /* default */ }
+
+function placePip() {
+  const a = area.getBoundingClientRect();
+  const w = Math.min(Math.max(box.w, 0.2), 0.8) * a.width;
+  const h = (w * 144) / 160;
+  pip.style.width = `${w}px`;
+  pip.style.left = `${Math.max(0, a.width - w) * Math.min(Math.max(box.x, 0), 1)}px`;
+  pip.style.top = `${Math.max(0, a.height - h) * Math.min(Math.max(box.y, 0), 1)}px`;
+}
+function keepPip() {
+  try { localStorage.setItem(PIP_KEY, JSON.stringify(box)); } catch { /* not kept */ }
+}
+
+let gesture = null;
+pip.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  pip.setPointerCapture(e.pointerId);
+  const a = area.getBoundingClientRect(), r = pip.getBoundingClientRect();
+  gesture = { id: e.pointerId, resize: e.target.classList.contains("resize"), x: e.clientX, y: e.clientY, a, r };
+});
+pip.addEventListener("pointermove", (e) => {
+  if (gesture?.id !== e.pointerId) return;
+  const { a, r } = gesture, dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
+  if (gesture.resize) {
+    box.w = Math.min(Math.max((r.width + Math.max(dx, (dy * 160) / 144)) / a.width, 0.2), 0.8);
+    const w = box.w * a.width, h = (w * 144) / 160;
+    box.x = a.width > w ? Math.min(Math.max((r.left - a.left) / (a.width - w), 0), 1) : 0;
+    box.y = a.height > h ? Math.min(Math.max((r.top - a.top) / (a.height - h), 0), 1) : 0;
+  } else {
+    box.x = a.width > r.width ? Math.min(Math.max((r.left - a.left + dx) / (a.width - r.width), 0), 1) : 0;
+    box.y = a.height > r.height ? Math.min(Math.max((r.top - a.top + dy) / (a.height - r.height), 0), 1) : 0;
+  }
+  placePip();
+});
+const endGesture = (e) => { if (gesture?.id === e.pointerId) { gesture = null; keepPip(); } };
+pip.addEventListener("pointerup", endGesture);
+pip.addEventListener("pointercancel", endGesture);
+new ResizeObserver(placePip).observe(area);
+placePip();
+
+// Show or hide the other player's screen.
 const viewButton = document.getElementById("view");
 function setSolo(solo) {
   document.body.classList.toggle("solo", solo);
-  viewButton.textContent = solo ? "Both screens" : "My screen";
+  viewButton.textContent = solo ? "Show other" : "Hide other";
   try { localStorage.setItem("solo", solo ? "1" : "0"); } catch { /* not kept */ }
 }
 viewButton.addEventListener("click", () => setSolo(!document.body.classList.contains("solo")));
