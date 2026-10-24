@@ -18,9 +18,14 @@ import tetris from "./tetris.wasm";
 // the other player's at `theirs`; a round counts once both Game Boys agree. `best` is the
 // number of round wins that ends the match. Phones never report results.
 //
-// `start` (optional) skips the menus: when both players are ready, the server runs the
+// `start` (optional) skips the menus: when all players are ready, the server runs the
 // game `frames` frames ahead at once, pressing buttons as it goes: each [frame, player 1,
-// player 2] sets both Game Boys' buttons from that frame on. Players start in the match.
+// player 2, ...] sets every Game Boy's buttons from that frame on. Players start in the match.
+//
+// `players` (default 2) is the most seats a match can have, `minPlayers` (default the
+// same) the fewest; whoever opens the match picks within that. Two Game Boys are joined
+// by a link cable, more by the 4-Player Adapter; `link: "adapter"` uses the adapter for
+// two as well (games written for it, like F-1 Pole Position).
 const BUILT_IN = [
   { id: "tetris", title: "Tetris (2 players)", module: tetris, result: { wins: 0xffd7, theirs: 0xffd8, best: 4 },
     // 2PLAYER, then Start through game type, music A and the height screen
@@ -32,13 +37,14 @@ const BUILT_IN = [
   { id: "rcproam", title: "Super R.C. Pro-Am (2 players)", module: rcproam,
     // Start on the title: both cars on the grid, just before the countdown
     start: { frames: 900, inputs: [[800, 0x80, 0], [806, 0, 0]] } },
-  { id: "f1pole", title: "F-1 Pole Position (1 player each)", module: f1pole },
+  { id: "f1pole", title: "F-1 Pole Position (2-4 players)", module: f1pole, players: 4, minPlayers: 2, link: "adapter" },
   { id: "linkdemo", title: "Link demo (2 players)", module: linkdemo },
   { id: "hello", title: "Hello World", module: hello },
 ];
 
-// id -> { title, module, result, start }
+// id -> { title, module, result, start, players, minPlayers, link }
 export const GAMES = Object.freeze(Object.fromEntries(
-  [...local, ...BUILT_IN].map(({ id, title, module, result = null, start = null }) =>
-    [id, Object.freeze({ title, module, result, start })]),
+  [...local, ...BUILT_IN].map(({ id, title, module, result = null, start = null, players = 2, minPlayers = players,
+                                link = players > 2 ? "adapter" : "cable" }) =>
+    [id, Object.freeze({ title, module, result, start, players, minPlayers, link })]),
 ));

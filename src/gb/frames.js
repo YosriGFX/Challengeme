@@ -1,11 +1,12 @@
 // Screen updates in the spirit of VNC's RFB protocol: a phone is sent only what changed
 // on a Game Boy's screen since the last update of that screen it was sent. Each phone
-// follows both Game Boys of its match, so nobody plays against a black box.
+// follows every Game Boy of its match, so nobody plays against a black box.
 //
 //   [2 + screen][seq u16 LE][dx i8][dy i8][45-byte tile mask][tile, tile, ...]
 //
-// screen is 0 for player 1's Game Boy, 1 for player 2's. seq counts all updates sent to
-// one phone, both screens together; the phone acknowledges the last one it drew.
+// screen is 0-3: player n's Game Boy is screen n - 1 (types 2-5; sound is type 8). seq
+// counts all updates sent to one phone, all screens together; the phone acknowledges the
+// last one it drew.
 //
 // 1. Move (like RFB's CopyRect): when the picture scrolled, the phone first shifts what
 //    it has by (dx, dy). Pixel (x, y) becomes old (x - dx, y - dy); pixels whose source is

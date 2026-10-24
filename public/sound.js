@@ -3,7 +3,7 @@
 // start audio only after a tap or a key press, so until then this keeps the registers'
 // latest values and hands them over when the sound starts.
 
-const MSG_SOUND = 4;
+const MSG_SOUND = 8;
 const TRIGGERS = new Set([0x14, 0x19, 0x1e, 0x23]);
 
 export class Sound {

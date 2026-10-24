@@ -3,11 +3,11 @@
 // the sound chip (public/apu.js). Like the screen updates, this is output only: a few
 // bytes per frame, and nothing a phone could use to change the game.
 //
-// Message: u8 4, u32 LE `end`, then per write: u32 LE cycle, u8 register (low byte of
+// Message: u8 8, u32 LE `end`, then per write: u32 LE cycle, u8 register (low byte of
 // its address), u8 value. Cycles count from the machine's reset, modulo 2^32; `end` is
 // how far the machine has run, so the phone can keep its playback a fixed delay behind.
 
-export const MSG_SOUND = 4;
+export const MSG_SOUND = 8;
 
 const TRIGGERS = new Set([0x14, 0x19, 0x1e, 0x23]);
 

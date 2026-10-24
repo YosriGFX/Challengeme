@@ -4,7 +4,7 @@ import { GAMES } from "./games/index.js";
 
 export { Match } from "./match.js";
 
-const GAME_LIST = Object.entries(GAMES).map(([id, { title }]) => ({ id, title }));
+const GAME_LIST = Object.entries(GAMES).map(([id, { title, players, minPlayers }]) => ({ id, title, players, minPlayers }));
 
 const MATCH_ID = /^[a-z0-9]{6,16}$/;
 const GAME_ID = /^[a-z0-9_-]{1,32}$/;
@@ -15,7 +15,7 @@ const json = (data, status) =>
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const [, scope, resource, id] = url.pathname.split("/");        // /ws/match/<id>?player=1|2[&game=<name>]
+    const [, scope, resource, id] = url.pathname.split("/");        // /ws/match/<id>?player=1-4[&game=<name>[&seats=2-4]]
     try {
       switch (`${request.method} ${scope} ${resource}`) {
         case "GET api games":
@@ -28,12 +28,14 @@ export default {
             return json({ error: "bad_origin" }, 403);
           }
           const player = url.searchParams.get("player");
-          if (player !== "1" && player !== "2") return json({ error: "bad_player" }, 400);
-          const game = url.searchParams.get("game") ?? "";
+          if (!/^[1-4]$/.test(player ?? "")) return json({ error: "bad_player" }, 400);
+          const game = url.searchParams.get("game") ?? "", seats = url.searchParams.get("seats") ?? "";
           if (game !== "" && !GAME_ID.test(game)) return json({ error: "bad_game" }, 400);
+          if (!/^[2-4]?$/.test(seats)) return json({ error: "bad_seats" }, 400);
           const req = new Request(request, { headers: new Headers(request.headers) });
           req.headers.set("X-Player", player);
           req.headers.set("X-Game", game);
+          req.headers.set("X-Seats", seats);
           return env.MATCH.getByName(id).fetch(req);
         }
       }

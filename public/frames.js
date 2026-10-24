@@ -5,9 +5,9 @@
 export const W = 160, H = 144;
 const COLS = 20, ROWS = 18, MASK_BYTES = 45;
 
-// Which Game Boy an update is for: 0 = player 1, 1 = player 2, -1 = not an update.
+// Which Game Boy an update is for: 0 = player 1 ... 3 = player 4, -1 = not an update.
 export function screen(buf) {
-  return buf.length >= 5 + MASK_BYTES && (buf[0] === 2 || buf[0] === 3) ? buf[0] - 2 : -1;
+  return buf.length >= 5 + MASK_BYTES && buf[0] >= 2 && buf[0] <= 5 ? buf[0] - 2 : -1;
 }
 
 export class FrameDecoder {
