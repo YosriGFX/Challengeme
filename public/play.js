@@ -281,18 +281,33 @@ function status(text, cls) {
   conn.className = cls ?? "";
 }
 
+// Reconnects on its own, and at once when the network or the page comes back (a phone
+// call can cut mobile data for a while). A link that died without closing (common when
+// a phone switches networks) is noticed when nothing, not even a pong, arrives for a while.
+const PING_MS = 4000;
+const DEAD_MS = 9000;
+
 function connect() {
-  let retry = 0, ping;
+  let retry = 0, ping, timer, heard = 0;
   const open = () => {
+    clearTimeout(timer);
     const q = new URLSearchParams({ player });
     if (game) q.set("game", game);
-    ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/match/${match}?${q}`);
-    ws.binaryType = "arraybuffer";
-    ws.addEventListener("open", () => {
-      ws.send(JSON.stringify({ t: "join", token: savedToken() }));
-      ping = setInterval(() => ws.send("ping"), 25_000);
+    const sock = ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/match/${match}?${q}`);
+    sock.binaryType = "arraybuffer";
+    sock.addEventListener("open", () => {
+      if (sock !== ws) return;
+      heard = Date.now();
+      sock.send(JSON.stringify({ t: "join", token: savedToken() }));
+      clearInterval(ping);
+      ping = setInterval(() => {
+        if (Date.now() - heard > DEAD_MS) reopen();
+        else sock.send("ping");
+      }, PING_MS);
     });
-    ws.addEventListener("message", (e) => {
+    sock.addEventListener("message", (e) => {
+      if (sock !== ws) return;
+      heard = Date.now();
       if (typeof e.data !== "string") {
         const buf = new Uint8Array(e.data);
         if (Sound.is(buf)) { sound.feed(buf); return; }
@@ -321,15 +336,34 @@ function connect() {
         status(`stopped at ${msg.at}`, "bad");
       }
     });
-    ws.addEventListener("close", (e) => {
+    sock.addEventListener("close", (e) => {
+      if (sock !== ws) return;                      // a link we already gave up on
       clearInterval(ping);
       joined = false;
       const final = { 4000: "opened on another tab", 4003: `player ${player} is taken`, 4004: "unknown game" }[e.code];
       if (final) { status(final, "bad"); return; }
       status("reconnecting…", "bad");
-      setTimeout(open, Math.min(10_000, 250 * 2 ** retry++) * (0.5 + Math.random()));
+      timer = setTimeout(open, Math.min(3000, 250 * 2 ** retry++) * (0.5 + Math.random()));
     });
   };
+  // Drop the current link without waiting for it to close, and open a new one now.
+  const reopen = () => {
+    const old = ws;
+    clearInterval(ping);
+    joined = false;
+    status("reconnecting…", "bad");
+    retry = 0;
+    open();
+    try { old.close(); } catch { /* already gone */ }
+  };
+  const check = () => {
+    if (document.hidden) return;
+    if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) reopen();
+    else if (ws.readyState === WebSocket.OPEN && Date.now() - heard > DEAD_MS) reopen();
+  };
+  addEventListener("online", check);
+  addEventListener("pageshow", check);
+  document.addEventListener("visibilitychange", check);
   open();
 }
 connect();
