@@ -169,10 +169,12 @@ dropped instead of breaking the build.
 
 ## 8. Multiplayer
 
-Two Game Boys run in each match, joined by an emulated link cable. Games that use the
-link cable for two players work (Tetris, Dr. Mario, Super R.C. Pro-Am). Games whose
-multiplayer needs Nintendo's 4-Player Adapter (DMG-07), like F-1 Pole Position, still run,
-but each player plays alone until the adapter is added.
+Two to four Game Boys run in each match: two joined by an emulated link cable, or up to
+four on an emulated 4-Player Adapter (DMG-07, `src/gb/adapter.js`). Link-cable games
+(Tetris, Dr. Mario, Super R.C. Pro-Am) and adapter games (F-1 Pole Position) both work.
+The committed game list keeps only games whose round wins the server reads (`result` in
+`src/games/index.js`), so it can decide matches and time limits; any other game can still
+be tried locally with `tools.add_game`.
 
 To check a two-player game without phones:
 

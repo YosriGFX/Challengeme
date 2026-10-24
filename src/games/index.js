@@ -1,18 +1,15 @@
 // Translated games, bundled into the Worker at deploy time (Workers cannot compile
 // WebAssembly from bytes). They never reach a browser: players only get pixels.
 //
-// coinduel, skyhop, hello and linkdemo are our own homebrew ROMs (rom_maker/template and
-// rom_maker/skyhop). The others are translated from the
+// Only games for two players or more whose result the server reads (round wins, so the
+// match time limit works too). coinduel and skyhop are our own homebrew ROMs
+// (rom_maker/template and rom_maker/skyhop); tetris and drmario are translated from the
 // owner's cartridge ROMs (only the .wasm is here, not the ROM). More games can be added on
 // one machine with `python -m tools.add_game <rom.gb> <id> "<title>"`, which writes them
 // to ./local/ and ./local.js; neither is committed. See TRANSLATOR.md.
 import coinduel from "./coinduel.wasm";
 import drmario from "./drmario.wasm";
-import f1pole from "./f1pole.wasm";
-import hello from "./hello.wasm";
-import linkdemo from "./linkdemo.wasm";
 import local from "./local.js";
-import rcproam from "./rcproam.wasm";
 import skyhop from "./skyhop.wasm";
 import tetris from "./tetris.wasm";
 
@@ -33,7 +30,7 @@ import tetris from "./tetris.wasm";
 // `players` (default 2) is the most seats a match can have, `minPlayers` (default the
 // same) the fewest; whoever opens the match picks within that. Two Game Boys are joined
 // by a link cable, more by the 4-Player Adapter; `link: "adapter"` uses the adapter for
-// two as well (games written for it, like F-1 Pole Position).
+// two as well (games written for it, like Sky Hop).
 const BUILT_IN = [
   { id: "skyhop", title: "Sky Hop (2-4 players)", module: skyhop, players: 4, minPlayers: 2, link: "adapter",
     result: { winsBy: 0xc000, best: 3, bestAt: 0xc004, bestChoices: [1, 2, 3, 4, 5, 7, 9] },
@@ -46,24 +43,9 @@ const BUILT_IN = [
   { id: "drmario", title: "Dr. Mario (2 players)", module: drmario, result: { wins: 0xd000, theirs: 0xd001, best: 3 },
     // 2 PLAYER GAME, then Start on the settings (virus level 0, speed MED, music CHILL)
     start: { frames: 380, inputs: [[280, 0x08, 0], [286, 0, 0], [300, 0x80, 0], [306, 0, 0], [360, 0x80, 0], [366, 0, 0]] } },
-  { id: "rcproam", title: "Super R.C. Pro-Am (2 players)", module: rcproam,
-    // Start on the title: both cars on the grid, just before the countdown
-    start: { frames: 900, inputs: [[800, 0x80, 0], [806, 0, 0]] } },
-  { id: "f1pole", title: "F-1 Pole Position (2-4 players)", module: f1pole, players: 4, minPlayers: 2, link: "adapter",
-    // Multi Player, then (all) A through the race setup, track and laps, SETTING / PIT OUT
-    // and PIT OUT: the cars on the grid, lights about to start. Same script for 2-4 players.
-    start: { frames: 1400, inputs: [[300, 0x80, 0x80, 0x80, 0x80], [306, 0, 0, 0, 0], [330, 0x08, 0x08, 0x08, 0x08],
-                                    [336, 0, 0, 0, 0], [350, 0x08, 0x08, 0x08, 0x08], [356, 0, 0, 0, 0],
-                                    [370, 0x80, 0x80, 0x80, 0x80], [376, 0, 0, 0, 0], [450, 0x80, 0, 0, 0], [456, 0, 0, 0, 0],
-                                    [700, 0x10, 0x10, 0x10, 0x10], [708, 0, 0, 0, 0], [760, 0x10, 0x10, 0x10, 0x10],
-                                    [768, 0, 0, 0, 0], [1090, 0x10, 0x10, 0x10, 0x10], [1098, 0, 0, 0, 0],
-                                    [1250, 0x08, 0x08, 0x08, 0x08], [1258, 0, 0, 0, 0], [1290, 0x10, 0x10, 0x10, 0x10],
-                                    [1298, 0, 0, 0, 0]] } },
   { id: "coinduel", title: "Coin Duel (2 players)", module: coinduel, result: { wins: 0xc000, theirs: 0xc001, best: 5, bestAt: 0xc002, bestChoices: [1, 2, 3, 4, 5, 7, 9] },
     // START on player 1 makes the handshake
     start: { frames: 30, inputs: [[10, 0x80, 0], [16, 0, 0]] } },
-  { id: "linkdemo", title: "Link demo (2 players)", module: linkdemo },
-  { id: "hello", title: "Hello World", module: hello },
 ];
 
 // id -> { title, module, result, start, players, minPlayers, link }
