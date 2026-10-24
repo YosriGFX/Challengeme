@@ -67,6 +67,10 @@ const BUILT_IN = [
 ];
 
 // id -> { title, module, result, start, players, minPlayers, link }
+// Match time limits the opener can pick, in seconds (0 = none), for games whose result
+// the server reads: when time is up, the most round wins takes the match.
+export const TIME_CHOICES = Object.freeze([0, 60, 120, 180, 240, 300, 600]);
+
 export const GAMES = Object.freeze(Object.fromEntries(
   [...local, ...BUILT_IN].map(({ id, title, module, result = null, start = null, players = 2, minPlayers = players,
                                 link = players > 2 ? "adapter" : "cable" }) =>

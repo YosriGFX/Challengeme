@@ -12,12 +12,13 @@ const player = params.get("player");
 const game = params.get("game") ?? "";
 const seatsWanted = params.get("seats") ?? "";
 const bestWanted = params.get("best") ?? "";
+const timeWanted = params.get("time") ?? "";
 const conn = document.getElementById("conn");
 const peer = document.getElementById("peer");
 
 if (!/^[a-z0-9]{6,16}$/.test(match) || !/^[1-4]$/.test(player ?? "") ||
     (game !== "" && !/^[a-z0-9_-]{1,32}$/.test(game)) || !/^[2-4]?$/.test(seatsWanted) ||
-    !/^([1-9][0-9]?)?$/.test(bestWanted)) {
+    !/^([1-9][0-9]?)?$/.test(bestWanted) || !/^[0-9]{0,4}$/.test(timeWanted)) {
   conn.textContent = "Bad match link.";
   throw new Error("bad match link");
 }
@@ -136,6 +137,7 @@ let phase = null, countdown = null;
 function showLobby({ phase: next, online, ready, played, pause }) {
   if (next === "playing" && phase !== "playing") sound.reset();   // a new match
   phase = next;
+  if (next === "lobby") clock.hidden = true;
   lobby.classList.toggle("show", next !== "playing");
   document.body.classList.toggle("lobby", next === "lobby" && !ready[me]);
   const here = online.filter(Boolean).length;
@@ -190,7 +192,15 @@ const result = document.getElementById("result");
 const CONFETTI = ["#6cd38a", "#f4d35e", "#e07a6a", "#5fa8f5", "#c792ea", "#ffffff"];
 let resultTimer;
 
-function showResult({ winner, wins, best, over, forfeit }) {
+// ---- match clock: the server counts the time limit down in frames played.
+const clock = document.getElementById("clock");
+function showClock({ left, sudden }) {
+  clock.hidden = false;
+  clock.className = sudden || left <= 30 ? "low" : "";
+  clock.textContent = sudden ? "Sudden death" : `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+}
+
+function showResult({ winner, wins, best, over, forfeit, time }) {
   if (forfeit && !winner && forfeit !== Number(player)) {      // more than two players: nobody won
     result.className = "show over";
     result.querySelector("strong").textContent = "MATCH OVER";
@@ -209,7 +219,7 @@ function showResult({ winner, wins, best, over, forfeit }) {
   result.querySelector("span").textContent = forfeit
     ? (won ? `Player ${forfeit} was offline too long` : "You were offline too long")
     : over
-      ? `${won ? "Match won" : "Match lost"} ${score}`
+      ? `${time ? "Time up · " : ""}${won ? "Match won" : "Match lost"} ${score}`
       : `${won ? "Round won" : "Round lost"} · ${score} · first to ${best}`;
   for (const old of result.querySelectorAll("i")) old.remove();
   const count = won ? (over ? 140 : 70) : (over ? 50 : 24);   // confetti when you win, grey rain when you lose
@@ -368,6 +378,7 @@ function connect() {
     if (game) q.set("game", game);
     if (game && seatsWanted) q.set("seats", seatsWanted);
     if (game && bestWanted) q.set("best", bestWanted);
+    if (game && timeWanted) q.set("time", timeWanted);
     const sock = ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/match/${match}?${q}`);
     sock.binaryType = "arraybuffer";
     sock.addEventListener("open", () => {
@@ -406,6 +417,9 @@ function connect() {
         showLobby(msg);
       } else if (msg.t === "result") {
         showResult(msg);
+        if (msg.over) clock.hidden = true;
+      } else if (msg.t === "clock") {
+        showClock(msg);
       } else if (msg.t === "trap") {
         status(`stopped at ${msg.at}`, "bad");
       }

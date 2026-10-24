@@ -1,11 +1,12 @@
 // Worker: serves the match WebSocket and the list of games. Pages and scripts are static
 // assets from ./public. The games themselves run in the Match Durable Object (src/match.js).
-import { GAMES } from "./games/index.js";
+import { GAMES, TIME_CHOICES } from "./games/index.js";
 
 export { Match } from "./match.js";
 
 const GAME_LIST = Object.entries(GAMES).map(([id, { title, players, minPlayers, result }]) =>
-  ({ id, title, players, minPlayers, best: result?.best, bestChoices: result?.bestAt ? result.bestChoices : undefined }));
+  ({ id, title, players, minPlayers, best: result?.best, bestChoices: result?.bestAt ? result.bestChoices : undefined,
+     times: result ? TIME_CHOICES : undefined }));
 
 const MATCH_ID = /^[a-z0-9]{6,16}$/;
 const GAME_ID = /^[a-z0-9_-]{1,32}$/;
@@ -16,7 +17,7 @@ const json = (data, status) =>
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const [, scope, resource, id] = url.pathname.split("/");        // /ws/match/<id>?player=1-4[&game=<name>[&seats=2-4][&best=1-99]]
+    const [, scope, resource, id] = url.pathname.split("/");        // /ws/match/<id>?player=1-4[&game=<name>[&seats=2-4][&best=1-99][&time=s]]
     try {
       switch (`${request.method} ${scope} ${resource}`) {
         case "GET api games":
@@ -35,11 +36,14 @@ export default {
           if (!/^[2-4]?$/.test(seats)) return json({ error: "bad_seats" }, 400);
           const best = url.searchParams.get("best") ?? "";
           if (!/^([1-9][0-9]?)?$/.test(best)) return json({ error: "bad_best" }, 400);
+          const time = url.searchParams.get("time") ?? "";
+          if (!/^[0-9]{0,4}$/.test(time)) return json({ error: "bad_time" }, 400);
           const req = new Request(request, { headers: new Headers(request.headers) });
           req.headers.set("X-Player", player);
           req.headers.set("X-Game", game);
           req.headers.set("X-Seats", seats);
           req.headers.set("X-Best", best);
+          req.headers.set("X-Time", time);
           return env.MATCH.getByName(id).fetch(req);
         }
       }

@@ -1,9 +1,10 @@
 // Lists the games the server can run, then creates a match id and opens it as player 1.
 // Games for more than two players also ask how many will play, and games that allow it
-// how many round wins win the match.
+// how many round wins win the match, and games whose result the server reads a time limit.
 const select = document.getElementById("game");
 const seats = document.getElementById("seats");
 const best = document.getElementById("best");
+const time = document.getElementById("time");
 let games = [];
 
 function showSeats() {
@@ -15,6 +16,9 @@ function showSeats() {
   best.replaceChildren(...choices.map((n) => new Option(n === 1 ? "1 round" : `${n} rounds`, n)));
   if (choices.includes(g.best)) best.value = g.best;
   document.getElementById("best-row").hidden = choices.length === 0;
+  const times = g?.times ?? [];
+  time.replaceChildren(...times.map((s) => new Option(s ? `${s / 60} min (${s} s)` : "No limit", s)));
+  document.getElementById("time-row").hidden = times.length === 0;
 }
 select.addEventListener("change", showSeats);
 
@@ -35,5 +39,6 @@ document.getElementById("start").addEventListener("submit", (e) => {
   const q = new URLSearchParams({ match, player: "1", game });
   if (!document.getElementById("seats-row").hidden) q.set("seats", form.get("seats"));
   if (!document.getElementById("best-row").hidden) q.set("best", form.get("best"));
+  if (!document.getElementById("time-row").hidden && form.get("time") !== "0") q.set("time", form.get("time"));
   location.href = `/play.html?${q}`;
 });
