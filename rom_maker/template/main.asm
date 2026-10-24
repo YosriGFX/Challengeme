@@ -1,6 +1,7 @@
 ; COIN DUEL: the example two-player game. Each player moves a square; a coin appears at
 ; the same place on both Game Boys; whoever touches it first wins the round; first to
-; WINS_TO_MATCH wins the match.
+; WINS_TO_MATCH wins the match. After each round everything stands still for a moment
+; (ROUND_PAUSE), then both players go back to their start and a new coin appears.
 ;
 ; It shows everything a Challenge Me game needs (see ../ASSEMBLY.md):
 ; - a link handshake that decides who is player 1 (master) and player 2 (slave),
@@ -19,6 +20,8 @@ INCLUDE "tiles.asm"
 DEF WINS_TO_MATCH EQU 5
 DEF HELLO         EQU $A5          ; player 1's first byte
 DEF SPEED         EQU 2            ; pixels per frame
+DEF ROUND_PAUSE   EQU 210          ; frames everything stands still after a round (3.5 s,
+                                   ; as long as the phone shows the round result)
 ; Sprite coordinates of the play area (a sprite's X is screen x + 8, Y is screen y + 16)
 DEF MIN_X EQU 16
 DEF MAX_X EQU 152
@@ -47,6 +50,7 @@ wCoinY:  db                        ; 0 = hidden
 wScore1: db
 wScore2: db
 wOver:   db                        ; 1 once the match is decided
+wPause:  db                        ; frames left in the pause between rounds
 
 ; ---------------------------------------------------------------------------- vectors
 SECTION "VBlank interrupt", ROM0[$40]
@@ -221,6 +225,14 @@ Exchange:
 
 ; ---------------------------------------------------------------------------- game
 InitGame:
+    xor a
+    ld [wScore1], a
+    ld [wScore2], a
+    ld [wOver], a
+    ld [wPause], a
+    call SetResults
+; Both players back at their start, and a new coin.
+NewRound:
     ld a, 40
     ld [wP1X], a
     ld a, 128
@@ -228,11 +240,6 @@ InitGame:
     ld a, 88
     ld [wP1Y], a
     ld [wP2Y], a
-    xor a
-    ld [wScore1], a
-    ld [wScore2], a
-    ld [wOver], a
-    call SetResults
     jp PlaceCoin
 
 ; One frame of the game, from both players' buttons. Runs the same on both Game Boys.
@@ -240,6 +247,14 @@ Update:
     ld a, [wOver]
     and a
     ret nz
+    ld a, [wPause]                 ; between rounds nobody moves
+    and a
+    jr z, .play
+    dec a
+    ld [wPause], a
+    ret nz
+    jp NewRound
+.play:
     ld a, [wPad1]
     ld hl, wP1X
     call Move
@@ -275,7 +290,12 @@ Update:
     jr nc, .over
     ld a, [wScore2]
     cp WINS_TO_MATCH
-    jp c, PlaceCoin
+    jr nc, .over
+    ld a, ROUND_PAUSE              ; round over: pause, then start the next one
+    ld [wPause], a
+    xor a
+    ld [wCoinY], a                 ; hide the coin
+    ret
 .over:
     ld a, 1
     ld [wOver], a

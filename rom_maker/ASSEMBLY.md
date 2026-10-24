@@ -171,6 +171,10 @@ end the match. `start` is run on the server before the players see anything: fro
 10 Game Boy 1 holds START (128), from 16 nothing. After the match the server goes back
 to its lobby and starts fresh Game Boys for a rematch, so the ROM needs no rematch menu.
 
+After each round, stop the game for about 3.5 seconds (210 frames) before the next one
+starts: that is how long the phones show the round result, and players expect the game
+to wait for it. The template counts `wPause` down in `Update`, then calls `NewRound`.
+
 ## 10. Bigger games
 
 - More than 32 KiB: use MBC5 (`rgbfix -m 0x19`, `SECTION "Level", ROMX, BANK[2]`).
