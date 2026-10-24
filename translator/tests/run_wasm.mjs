@@ -63,6 +63,7 @@ const report = (m) => {
   const out = { regs, trap: m.trap, frameSeq: m.frameSeq, dump, restoreMatches };
   if (flags.has("--fb")) out.fb = Buffer.from(m.pixels).toString("hex");
   if (flags.has("--shades")) out.shades = Buffer.from(m.shadesInto(new Uint8Array(160 * 144))).toString("hex");
+  if (flags.has("--sound")) out.sound = m.takeSound();
   return out;
 };
 console.log(JSON.stringify(linked ? { machines: machines.map(report) } : report(machines[0])));

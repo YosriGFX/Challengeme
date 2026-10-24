@@ -6,7 +6,10 @@
   ;; Control block: 0x10000 frame_seq, 0x10004 front_fb, 0x10008 joypad
   ;; (bit0 Right, 1 Left, 2 Up, 3 Down, 4 A, 5 B, 6 Select, 7 Start; 1 = pressed),
   ;; 0x10010 serial pending, 0x10014 serial tx, 0x10018 serial rx, 0x1001C serial rx ready,
-  ;; 0x10020 ROM bank at the last trap.
+  ;; 0x10020 ROM bank at the last trap, 0x10024 sound log length.
+  ;; Sound log at 0x14000: each write to the sound registers (FF10-FF3F) as 8 bytes,
+  ;; i32 cycles before the end of the current run_frame budget, u8 register (low byte of
+  ;; its address), u8 value. The host drains it after each run_frame; the phones play it.
   (import "env" "mem" (memory __PAGES__ __PAGES__ shared))
 
   ;; Every mutable global is exported (hardware state as "s_*"), so memory plus globals
@@ -454,6 +457,16 @@
     (call $set_rom_bank (i32.or (i32.shl (global.get $MBC_HI) (i32.const 5)) (global.get $MBC_LO)))
     (call $set_ram_bank (select (global.get $MBC_HI) (i32.const 0) (global.get $MBC_MODE))))
 
+  ;; Records a sound register write for the host; a full log drops the rest.
+  (func $snd_log (param $addr i32) (param $v i32) (param $cyc i32) (local $n i32) (local $p i32)
+    (local.set $n (i32.load (i32.const 0x10024)))
+    (if (i32.ge_u (local.get $n) (i32.const 2048)) (then (return)))
+    (local.set $p (i32.add (i32.const 0x14000) (i32.shl (local.get $n) (i32.const 3))))
+    (i32.store (local.get $p) (i32.sub (global.get $FRAME_END) (local.get $cyc)))
+    (i32.store8 offset=4 (local.get $p) (local.get $addr))
+    (i32.store8 offset=5 (local.get $p) (local.get $v))
+    (i32.store (i32.const 0x10024) (i32.add (local.get $n) (i32.const 1))))
+
   ;; Write for everything outside 0x8000-0xDFFF.
   (func $wr (param $addr i32) (param $v i32) (param $cyc i32) (local $old i32)
     (if (i32.lt_u (i32.sub (local.get $addr) (i32.const 0x8000)) (i32.const 0x6000))
@@ -489,6 +502,14 @@
             (global.set $DEADLINE (local.get $cyc)) (return)))
     (if (i32.eq (local.get $addr) (i32.const 0xFF44))
       (then (return)))
+    (if (i32.lt_u (i32.sub (local.get $addr) (i32.const 0xFF10)) (i32.const 0x30))   ;; sound
+      (then
+        (if (i32.and (i32.eq (local.get $addr) (i32.const 0xFF26))
+                     (i32.eqz (i32.and (local.get $v) (i32.const 0x80))))
+          (then (memory.fill (i32.const 0xFF10) (i32.const 0) (i32.const 0x16))))   ;; power off clears
+        (i32.store8 (local.get $addr) (local.get $v))
+        (call $snd_log (local.get $addr) (local.get $v) (local.get $cyc))
+        (return)))
     (if (i32.eq (local.get $addr) (i32.const 0xFF46))                ;; OAM DMA, done at once
       (then (memory.copy (i32.const 0xFE00) (i32.shl (local.get $v) (i32.const 8)) (i32.const 160))
             (i32.store8 (local.get $addr) (local.get $v)) (return)))

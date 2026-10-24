@@ -59,6 +59,22 @@
     #settings .slot.listen { background: var(--down); color: var(--bg); }
     #settings .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
     #settings .row button { height: 34px; padding: 0 16px; border-radius: 17px; font-size: 13px; }
+    /* The lobby: who is here and ready. Shown until the server starts the match, and again
+       when it pauses or ends. Touches go through to the buttons under it. */
+    #lobby { position: fixed; inset: 0; z-index: 8; display: none; place-content: center; pointer-events: none;
+             padding: 16px; background: rgb(16 20 24 / 0.6); }
+    #lobby.show { display: grid; }
+    #lobby .card { width: min(340px, calc(100vw - 32px)); padding: 18px; border-radius: 16px; background: var(--panel);
+                   box-shadow: 0 8px 32px rgb(0 0 0 / 0.5); text-align: center; }
+    #lobby strong { display: block; font-size: 22px; margin-bottom: 6px; }
+    #lobby p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+    #lobby ul { list-style: none; margin: 0; padding: 0; text-align: left; font-size: 15px; }
+    #lobby li { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--key); }
+    #lobby li span:last-child { color: var(--muted); }
+    #lobby li.on span:last-child { color: var(--text); }
+    #lobby li.ready span:last-child { color: var(--down); font-weight: 700; }
+    body.lobby .menu [data-key=start] { position: relative; z-index: 9; animation: nudge 1.2s ease-in-out infinite; }
+    @keyframes nudge { 50% { background: var(--down); color: var(--bg); } }
     /* Round and match results, decided by the server and drawn here in the page, never in
        the game's screen. The overlay lets touches through, so play goes on under it. */
     #result { position: fixed; inset: 0; z-index: 10; display: none; place-content: center; text-align: center;
@@ -81,7 +97,7 @@
   </style>
 </head>
 <body>
-  <header><span id="who">Player</span><span id="peer"></span><span id="pads"></span><button id="view" type="button">Hide other</button><button id="controls" type="button" aria-label="Controls">⚙</button><span id="conn">connecting…</span></header>
+  <header><span id="who">Player</span><span id="peer"></span><span id="pads"></span><button id="view" type="button">Hide other</button><button id="sound" type="button" aria-label="Sound">🔊</button><button id="controls" type="button" aria-label="Controls">⚙</button><span id="conn">connecting…</span></header>
   <section class="screens">
     <figure id="fig1"><canvas id="screen1" width="160" height="144"></canvas><figcaption>Player 1</figcaption><span class="resize"></span></figure>
     <figure id="fig2"><canvas id="screen2" width="160" height="144"></canvas><figcaption>Player 2</figcaption><span class="resize"></span></figure>
@@ -95,6 +111,8 @@
     <div class="ab"><button data-key="b">B</button><button data-key="a">A</button></div>
   </div>
   <div class="menu"><button data-key="select">SELECT</button><button data-key="start">START</button></div>
+  <div id="lobby" class="show" role="status"><div class="card"><strong>Connecting…</strong><p></p>
+    <ul><li id="lobby1"><span>Player 1</span><span></span></li><li id="lobby2"><span>Player 2</span><span></span></li></ul></div></div>
   <dialog id="settings"></dialog>
   <div id="result" role="status" aria-live="assertive"><strong></strong><span></span></div>
   <script type="module" src="/play.js"></script>

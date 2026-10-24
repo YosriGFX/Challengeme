@@ -117,6 +117,18 @@ def hello_expected(x, y):
         return 0
     return 3 if GLYPHS[MESSAGE[col]][y % 8] & (0x80 >> (x % 8)) else 0
 
+# Sound registers: power on, a note on channel 1, power off (which clears FF10-FF25).
+SOUND = {
+    (0, 0x150): h("""
+        3E80 E026        ; NR52 = on
+        3E77 E024        ; NR50 = full volume
+        3EF0 E012        ; NR12 = volume 15
+        3E87 E014        ; NR14 = trigger, frequency high bits 7
+        AF E026          ; NR52 = off
+        18FE
+    """),
+}
+
 
 @unittest.skipUnless(TOOLS, "needs wat2wasm and node on PATH")
 class HardwareTest(unittest.TestCase):
@@ -216,6 +228,17 @@ class HardwareTest(unittest.TestCase):
         demo = self.wasm(make_link_demo_rom.build(), "linkdemo")
         res = run("--link", demo, demo, 12, "--restore=5", "--buttons=10", "--buttons2=20")
         self.assertTrue(all(m["restoreMatches"] for m in res["machines"]))
+
+    def test_sound_register_writes_are_logged(self):
+        res = run(self.wasm(SOUND, "sound"), 1, "FF12:1", "FF24:1", "--sound")
+        self.assertIsNone(res["trap"])
+        s = res["sound"]
+        writes = [(s[i + 1], s[i + 2]) for i in range(0, len(s), 3)]
+        self.assertEqual(writes, [(0x26, 0x80), (0x24, 0x77), (0x12, 0xF0), (0x14, 0x87), (0x26, 0x00)])
+        cycles = s[0::3]
+        self.assertEqual(cycles, sorted(cycles), "in the order the game wrote them")
+        self.assertEqual(cycles[1] - cycles[0], 20, "one ld a,n (8) and ldh (n),a (12) apart")
+        self.assertEqual((res["dump"]["FF12"], res["dump"]["FF24"]), ([0], [0]), "power off clears the registers")
 
     def test_serial_without_partner_reads_ff(self):
         res = run(self.wasm(serial_rom(0x42, 0x81), "alone"), 1, "C000:1")

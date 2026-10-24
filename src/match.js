@@ -2,12 +2,15 @@ import { DurableObject } from "cloudflare:workers";
 import { GAMES } from "./games/index.js";
 import { FrameEncoder, H, W } from "./gb/frames.js";
 import { FRAME_CYCLES, FRAME_HZ, GameBoy, runLinked } from "./gb/machine.js";
+import { encodeSound, soundState } from "./gb/sound.js";
 import { SQL } from "./sql.js";
 
 const PERIOD = 1000 / FRAME_HZ;
 const MAX_CATCH_UP = 3;             // frames run at most per tick after a stall
 const MAX_UNACKED = 10;             // updates in flight to one phone before we skip frames
 const MAX_INPUTS_PER_SECOND = 120;  // a phone sends only on change; more is abuse
+const AFTER_MATCH_MS = 6000;        // the end of a match stays on screen this long
+const START = 0x80;
 
 // One match: two linked Game Boys that run here, and only here. Each phone is one
 // player's screen and controller. Cheating is designed out rather than detected:
@@ -22,7 +25,14 @@ const MAX_INPUTS_PER_SECOND = 120;  // a phone sends only on change; more is abu
 // Here -> phone: text {"t":"seat"|"peer"|"trap"|"result",...}; binary screen updates for both Game
 // Boys, each carrying only what changed since the last update of that screen the phone
 // was sent (format: gb/frames.js). Seeing the opponent's screen live keeps the other
-// player from being a black box; it is still only pixels.
+// player from being a black box; it is still only pixels. Each phone also gets its own
+// Game Boy's sound register writes (format: gb/sound.js).
+//
+// A match runs only while both players are here: phases are "lobby" (Game Boys stopped;
+// a player is ready after pressing START, and the game starts once both are online and
+// ready, already past its menus), "playing", and "paused" (someone left; the game goes on
+// when they are back). A few seconds after a match is decided it returns to the lobby,
+// where START again means a rematch. Phones get {"t":"lobby",...} on every change.
 export class Match extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
@@ -38,6 +48,8 @@ export class Match extends DurableObject {
     this.views = [null, null];      // per player: what that phone has been sent, per screen
     this.shades = new Uint8Array(W * H);
     this.rate = new Map();
+    this.phase = "lobby";
+    this.overAt = 0;                // when the match was decided
     this.timer = null;
     this.next = 0;
   }
@@ -66,7 +78,9 @@ export class Match extends DurableObject {
     if (typeof message === "string" || message.byteLength > 2) return ws.close(1003, "bad message");
     const bytes = new Uint8Array(message);
     if (bytes.length === 1) {
-      if (this.allow(ws)) this.press(seat.player, bytes[0]);
+      if (!this.allow(ws)) return;
+      if (this.phase === "playing") this.press(seat.player, bytes[0]);
+      else if (this.phase === "lobby" && (bytes[0] & START) && !seat.ready) this.setReady(ws, seat);
     } else {
       const view = this.views[seat.player - 1];
       if (view) view.acked = bytes[0] | (bytes[1] << 8);
@@ -80,7 +94,11 @@ export class Match extends DurableObject {
     this.press(seat.player, 0);                       // a player who left holds nothing
     this.views[seat.player - 1] = null;
     this.tell(3 - seat.player, { t: "peer", on: false });
-    if (!this.joined(1, ws) && !this.joined(2, ws)) this.stop();
+    if (this.phase === "playing") {
+      this.phase = "paused";
+      this.stop();
+    }
+    this.announce(ws);
   }
 
   async webSocketError(ws, error) {
@@ -109,16 +127,54 @@ export class Match extends DurableObject {
     ws.serializeAttachment({ player, joined: true });
     ws.send(JSON.stringify({ t: "seat", player, game, token: issued, peer: this.joined(3 - player, ws) }));
     this.tell(3 - player, { t: "peer", on: true });
-    this.views[player - 1] = { encoders: [new FrameEncoder(0), new FrameEncoder(1)], seq: 0, acked: 0, frameSeq: [-1, -1] };
+    this.views[player - 1] = { encoders: [new FrameEncoder(0), new FrameEncoder(1)], seq: 0, acked: 0, frameSeq: [-1, -1],
+                               soundFresh: true };
     console.log(JSON.stringify({ msg: "join", player, game, claimed: issued !== null }));
 
-    if (!this.machines) {
-      this.machines = [new GameBoy(GAMES[game].module), new GameBoy(GAMES[game].module)];
-      this.machines.forEach((m, i) => { m.buttons = this.buttons[i]; });
-      this.rule = GAMES[game].result;
-      this.wins = [0, 0];
+    if (this.phase === "paused" && this.joined(3 - player)) {
+      this.phase = "playing";
+      this.start();
     }
+    this.announce();
+    if (this.machines) this.sendFrame(player);       // where the game stands
+  }
+
+  setReady(ws, seat) {
+    ws.serializeAttachment({ ...seat, ready: true });
+    this.announce();
+    if (![1, 2].every((p) => this.joined(p) && this.ready(p))) return;
+    const game = this.sql.exec(SQL.getGame).toArray()[0]?.v;
+    if (game && Object.hasOwn(GAMES, game)) this.newMatch(game);
+  }
+
+  // Fresh Game Boys, run past the menus at once if the game says how.
+  newMatch(game) {
+    const { module, result, start } = GAMES[game];
+    const [a, b] = this.machines = [new GameBoy(module), new GameBoy(module)];
+    for (let f = 0; f < (start?.frames ?? 0); f++) {
+      for (const [at, b1, b2] of start.inputs) if (at === f) { a.buttons = b1; b.buttons = b2; }
+      runLinked(a, b, FRAME_CYCLES);
+    }
+    this.buttons = [0, 0];
+    for (const m of this.machines) { m.buttons = 0; m.takeSound(); }
+    this.rule = result;
+    this.wins = [0, 0];
+    this.overAt = 0;
+    for (const ws of this.ctx.getWebSockets()) {
+      const seat = ws.deserializeAttachment();
+      if (seat?.ready) ws.serializeAttachment({ ...seat, ready: false });
+    }
+    for (const view of this.views) if (view) view.soundFresh = true;
+    this.phase = "playing";
+    console.log(JSON.stringify({ msg: "match_start", game, skipped: start?.frames ?? 0 }));
+    this.announce();
     this.start();
+  }
+
+  // Tells both phones who is here and ready, and what the match is doing.
+  announce(except) {
+    const online = [1, 2].map((p) => this.joined(p, except)), ready = [1, 2].map((p) => this.ready(p, except));
+    for (const p of [1, 2]) this.tell(p, { t: "lobby", phase: this.phase, online, ready, played: this.machines !== null });
   }
 
   start() {
@@ -142,7 +198,18 @@ export class Match extends DurableObject {
     }
     if (this.next < now) this.next = now;           // fell behind: drop frames, don't spiral
     this.checkResult();
-    for (const player of [1, 2]) this.sendFrame(player);
+    const sound = this.machines.map((m) => m.takeSound());
+    for (const player of [1, 2]) {
+      this.sendFrame(player);
+      this.sendSound(player, sound[player - 1]);
+    }
+    if (this.overAt && Date.now() - this.overAt > AFTER_MATCH_MS) {
+      this.timer = null;
+      this.phase = "lobby";
+      this.overAt = 0;
+      this.announce();
+      return;
+    }
     this.timer = setTimeout(() => this.tick(), Math.max(1, this.next - Date.now()));
   }
 
@@ -164,11 +231,22 @@ export class Match extends DurableObject {
       const msg = view.encoders[screen].encode(m.shadesInto(this.shades), (view.seq + 1) & 0xffff);
       if (!msg) continue;
       view.seq = (view.seq + 1) & 0xffff;
-      for (const ws of this.ctx.getWebSockets(`p${player}`)) {
-        if (!ws.deserializeAttachment()?.joined) continue;
-        try { ws.send(msg); } catch { /* closing */ }
-      }
+      this.send(player, msg);
     }
+  }
+
+  // Sends `player`'s phone what its own Game Boy wrote to the sound registers; a phone
+  // that just joined first gets the registers as they stand.
+  sendSound(player, writes) {
+    const view = this.views[player - 1];
+    if (!view) return;
+    const m = this.machines[player - 1];
+    if (view.soundFresh) {
+      view.soundFresh = false;
+      writes = [...soundState(m.u8, writes.length ? writes[0] : m.clock), ...writes];
+    }
+    if (writes.length === 0) return;
+    this.send(player, encodeSound(writes, m.clock));
   }
 
   // The game itself says who won: each Game Boy counts its player's round wins in RAM,
@@ -183,6 +261,7 @@ export class Match extends DurableObject {
       this.wins[player - 1] = wins;
       if (wins !== before + 1 || before >= this.rule.best) continue;   // unchanged, reset, or past the end
       const [wins1, wins2] = this.wins, over = wins >= this.rule.best;
+      if (over) this.overAt = Date.now();
       this.sql.exec(SQL.addResult, player, wins1, wins2, over ? 1 : 0, Date.now());
       console.log(JSON.stringify({ msg: "result", winner: player, wins: this.wins, over }));
       for (const p of [1, 2]) this.tell(p, { t: "result", winner: player, wins: this.wins, best: this.rule.best, over });
@@ -201,8 +280,16 @@ export class Match extends DurableObject {
       .some((ws) => ws !== except && ws.deserializeAttachment()?.joined);
   }
 
+  ready(player, except) {
+    return this.ctx.getWebSockets(`p${player}`)
+      .some((ws) => ws !== except && ws.deserializeAttachment()?.ready);
+  }
+
   tell(player, obj) {
-    const data = JSON.stringify(obj);
+    this.send(player, JSON.stringify(obj));
+  }
+
+  send(player, data) {
     for (const ws of this.ctx.getWebSockets(`p${player}`)) {
       if (!ws.deserializeAttachment()?.joined) continue;
       try { ws.send(data); } catch { /* closing */ }

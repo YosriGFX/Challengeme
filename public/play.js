@@ -4,6 +4,7 @@
 import { FrameDecoder, screen } from "/frames.js";
 import { PALETTE } from "/palette.js";
 import { BUTTONS, controlsPanel, keyMap, loadBindings, pads, readPads } from "/controls.js";
+import { Sound } from "/sound.js";
 
 const params = new URLSearchParams(location.search);
 const match = params.get("match") ?? "";
@@ -103,6 +104,37 @@ function setSolo(solo) {
 viewButton.addEventListener("click", () => setSolo(!document.body.classList.contains("solo")));
 try { setSolo(localStorage.getItem("solo") === "1"); } catch { setSolo(false); }
 
+// ---- lobby: the server starts the match once both players are online and pressed START
+const lobby = document.getElementById("lobby");
+let phase = null;
+
+function showLobby({ phase: next, online, ready, played }) {
+  const me = Number(player) - 1, other = 1 - me;
+  if (next === "playing" && phase !== "playing" && phase !== "paused") sound.reset();   // a new match
+  phase = next;
+  lobby.classList.toggle("show", next !== "playing");
+  document.body.classList.toggle("lobby", next === "lobby" && !ready[me]);
+  let title, hint;
+  if (next === "paused") {
+    title = "Paused";
+    hint = `Player ${other + 1} went offline. The game goes on when they are back.`;
+  } else if (!ready[me]) {
+    title = played ? "Rematch?" : "Ready?";
+    hint = "Press START when you are ready.";
+  } else {
+    title = "Ready!";
+    hint = online[other] ? `Waiting for player ${other + 1} to press START.` : `Waiting for player ${other + 1} to join.`;
+  }
+  lobby.querySelector("strong").textContent = title;
+  lobby.querySelector("p").textContent = hint;
+  for (const i of [0, 1]) {
+    const li = document.getElementById(`lobby${i + 1}`);
+    li.className = `${online[i] ? "on" : ""} ${online[i] && ready[i] && next === "lobby" ? "ready" : ""}`;
+    li.firstElementChild.textContent = `Player ${i + 1}${i === me ? " (you)" : ""}`;
+    li.lastElementChild.textContent = !online[i] ? "offline" : next === "lobby" ? (ready[i] ? "ready" : "online") : "online";
+  }
+}
+
 // ---- results: only the server decides them (it reads the game's own memory); this page
 // just shows what it is told, over the screens rather than in them.
 const result = document.getElementById("result");
@@ -171,6 +203,16 @@ document.addEventListener("pointermove", (e) => { if (held.has(e.pointerId)) pre
 document.addEventListener("pointerup", release);
 document.addEventListener("pointercancel", release);
 document.addEventListener("contextmenu", (e) => e.preventDefault());
+// ---- sound: starts on the first tap or key press (browsers allow no sooner)
+const sound = new Sound();
+const soundButton = document.getElementById("sound");
+const showSound = () => { soundButton.textContent = sound.muted ? "🔇" : "🔊"; };
+showSound();
+soundButton.addEventListener("click", () => { sound.setMuted(!sound.muted); showSound(); });
+for (const type of ["pointerdown", "pointerup", "touchend", "keydown"]) {
+  addEventListener(type, () => sound.unlock(), { capture: true, passive: true });
+}
+
 // ---- keyboard and gamepad, as set in the Controls panel (controls.js)
 let bindings = loadBindings(), keymap = keyMap(bindings);
 const down = new Set();                               // key codes held
@@ -255,6 +297,7 @@ function connect() {
     ws.addEventListener("message", (e) => {
       if (typeof e.data !== "string") {
         const buf = new Uint8Array(e.data);
+        if (Sound.is(buf)) { sound.feed(buf); return; }
         if (drawUpdate(buf)) ws.send(buf.subarray(1, 3));   // ack: update seq
         return;
       }
@@ -263,6 +306,7 @@ function connect() {
       if (msg.t === "seat") {
         if (msg.token) saveToken(msg.token);
         for (const s of screens) s.decoder.px.fill(0);   // the server starts again from blank
+        sound.reset();
         joined = true;
         retry = 0;
         sent = -1;
@@ -271,6 +315,8 @@ function connect() {
         send();                                       // the server starts from our state
       } else if (msg.t === "peer") {
         peer.textContent = msg.on ? "2 players" : "other player left";
+      } else if (msg.t === "lobby") {
+        showLobby(msg);
       } else if (msg.t === "result") {
         showResult(msg);
       } else if (msg.t === "trap") {

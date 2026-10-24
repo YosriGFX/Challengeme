@@ -202,9 +202,31 @@ To find the addresses for a new game, play two rounds with
 `run_wasm.mjs --link` and compare RAM dumps after each: look for a byte that goes 0, 1, 2
 on the winner's side and the same value at another address on the loser's side.
 
+### Skipping the menus
+
+A match starts when both players are online and have pressed START. With a `start` on the
+game's line, the server first runs the game ahead at once through its menus, pressing
+buttons on the way, so players land straight in the 2-player match:
+
+```js
+start: { frames: 380, inputs: [[280, 0x08, 0], [286, 0, 0], [300, 0x80, 0], [306, 0, 0], [360, 0x80, 0], [366, 0, 0]] },
+```
+
+Each `[frame, player 1, player 2]` sets both Game Boys' buttons from that frame on (the
+same bits as `--buttons`), and `frames` is where the run stops. The game is the same every
+time it boots, so the same presses always land on the same menu items. To find them, run
+the two linked Game Boys with a script and look at the screens at a few frames; press each
+button for about 6 frames, and stop `frames` just before the match begins.
+
+### Sound
+
+The runtime logs every write to the sound registers (FF10-FF3F) with its cycle. The server
+sends each phone its own Game Boy's writes, and the phone plays them on its own copy of the
+sound chip (`public/apu.js`). Nothing in the game needs to change for this.
+
 ## 9. Not supported yet
 
-Sound, Game Boy Color, the MBC3 real-time clock, battery saves, and the 4-Player Adapter.
+Game Boy Color, the MBC3 real-time clock, battery saves, and the 4-Player Adapter.
 
 ## 10. Tests
 

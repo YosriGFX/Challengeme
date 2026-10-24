@@ -18,6 +18,8 @@ const SER_TX = 0x10014;
 const SER_RX = 0x10018;
 const SER_RX_READY = 0x1001c;
 const TRAP_BANK = 0x10020;
+const SOUND_LEN = 0x10024;
+const SOUND_LOG = 0x14000;
 const FB = 0x20000;
 
 // Joypad bits, 1 = pressed.
@@ -70,6 +72,8 @@ export class GameBoy {
     this.i32 = new Int32Array(this.buffer);
     this.trap = null;
     this.toSlave = null;              // link byte for the slave, due when our transfer ends
+    this.clock = 0;                   // cycles run since reset
+    this.sound = [];                  // sound register writes not yet taken: cycle, register, value
     this.x.reset();
   }
 
@@ -79,11 +83,30 @@ export class GameBoy {
     if (this.trap) return;
     try {
       this.x.run_frame(cycles);
+      this.clock += cycles;
+      this.drainSound();
     } catch (e) {
       const pc = this.x.PC.value, bank = Atomics.load(this.i32, TRAP_BANK >> 2);
       const at = pc >= 0x4000 && pc < 0x8000 ? `${hex(bank, 2)}:${hex(pc, 4)}` : hex(pc, 4);
       this.trap = { message: e.message, pc, bank, at };
     }
+  }
+
+  // The sound log holds each write's distance back from the end of the budget just run.
+  drainSound() {
+    const n = this.i32[SOUND_LEN >> 2];
+    if (n === 0) return;
+    for (let i = 0, p = SOUND_LOG; i < n; i++, p += 8) {
+      this.sound.push(this.clock - this.i32[p >> 2], this.u8[p + 4], this.u8[p + 5]);
+    }
+    this.i32[SOUND_LEN >> 2] = 0;
+  }
+
+  // Sound register writes since the last call, as [cycle, register, value, ...].
+  takeSound() {
+    const out = this.sound;
+    this.sound = [];
+    return out;
   }
 
   // The whole machine between frames: memory, every exported global, and the link byte
@@ -92,7 +115,7 @@ export class GameBoy {
   save() {
     const globals = {};
     for (const [name, g] of Object.entries(this.x)) if (g instanceof WebAssembly.Global) globals[name] = g.value;
-    return { mem: this.u8.slice(), globals, toSlave: this.toSlave, trap: this.trap };
+    return { mem: this.u8.slice(), globals, toSlave: this.toSlave, trap: this.trap, clock: this.clock };
   }
 
   load(state) {
@@ -102,6 +125,8 @@ export class GameBoy {
     }
     this.toSlave = state.toSlave;
     this.trap = state.trap;
+    this.clock = state.clock ?? 0;
+    this.sound = [];
   }
 
   set buttons(bits) { Atomics.store(this.i32, JOYPAD >> 2, bits & 0xff); }
