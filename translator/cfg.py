@@ -22,7 +22,9 @@ from .decoder import ALL_FLAGS, DecodeError, decode
 CART_ENTRY = 0x0100
 IRQ_VECTORS = (0x40, 0x48, 0x50, 0x58, 0x60)
 
-DMA_ROUTINE = re.compile(rb"\x3E.\xE0\x46\x3E.\x3D\x20\xFD\xC9", re.S)
+# The OAM DMA routine games copy to HRAM: the classic one (`ld a,hi; ldh ($46),a; ...`) or
+# GBDK's (`ldh a,(hi_var); or a; ret z; ldh ($46),a; ...`).
+DMA_ROUTINE = re.compile(rb"(?:\x3E.|\xF0.\xB7\xC8)\xE0\x46\x3E.\x3D\x20\xFD\xC9", re.S)
 
 # Cartridge header byte 0x147 -> MBC family; 0x149 -> number of 8 KiB RAM banks.
 MBC_OF = {0x00: 0, 0x08: 0, 0x09: 0, 0x01: 1, 0x02: 1, 0x03: 1,
