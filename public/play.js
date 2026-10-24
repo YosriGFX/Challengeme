@@ -104,27 +104,41 @@ function setSolo(solo) {
 viewButton.addEventListener("click", () => setSolo(!document.body.classList.contains("solo")));
 try { setSolo(localStorage.getItem("solo") === "1"); } catch { setSolo(false); }
 
-// ---- lobby: the server starts the match once both players are online and pressed START;
-// once started it never pauses
+// ---- lobby: the server starts the match once both players are online and pressed START.
+// A player who goes offline pauses it from their 30 s budget; out of time, they lose.
 const lobby = document.getElementById("lobby");
-let phase = null;
+let phase = null, countdown = null;
 
-function showLobby({ phase: next, online, ready, played }) {
+function showLobby({ phase: next, online, ready, played, pause }) {
   const me = Number(player) - 1, other = 1 - me;
   if (next === "playing" && phase !== "playing") sound.reset();   // a new match
   phase = next;
   lobby.classList.toggle("show", next !== "playing");
   document.body.classList.toggle("lobby", next === "lobby" && !ready[me]);
   let title, hint;
-  if (!ready[me]) {
+  clearInterval(countdown);
+  if (next === "paused" && pause) {
+    const end = Date.now() + pause.left;
+    const tickDown = () => {
+      const left = Math.max(0, Math.ceil((end - Date.now()) / 1000));
+      lobby.querySelector("p").textContent =
+        `Player ${pause.player} is offline. They lose the match in ${left} s unless they are back.`;
+    };
+    lobby.querySelector("strong").textContent = "Paused";
+    tickDown();
+    countdown = setInterval(tickDown, 250);
+    title = null;
+  } else if (!ready[me]) {
     title = played ? "Rematch?" : "Ready?";
     hint = "Press START when you are ready.";
   } else {
     title = "Ready!";
     hint = online[other] ? `Waiting for player ${other + 1} to press START.` : `Waiting for player ${other + 1} to join.`;
   }
-  lobby.querySelector("strong").textContent = title;
-  lobby.querySelector("p").textContent = hint;
+  if (title) {
+    lobby.querySelector("strong").textContent = title;
+    lobby.querySelector("p").textContent = hint;
+  }
   for (const i of [0, 1]) {
     const li = document.getElementById(`lobby${i + 1}`);
     li.className = `${online[i] ? "on" : ""} ${online[i] && ready[i] && next === "lobby" ? "ready" : ""}`;
@@ -139,14 +153,16 @@ const result = document.getElementById("result");
 const CONFETTI = ["#6cd38a", "#f4d35e", "#e07a6a", "#5fa8f5", "#c792ea", "#ffffff"];
 let resultTimer;
 
-function showResult({ winner, wins, best, over }) {
+function showResult({ winner, wins, best, over, forfeit }) {
   const me = Number(player) - 1, won = winner === Number(player);
   const score = `${wins[me]} – ${wins[1 - me]}`;
   result.className = `show ${won ? "win" : "lose"}${over ? " over" : ""}`;
   result.querySelector("strong").textContent = won ? "YOU WIN" : "YOU LOSE";
-  result.querySelector("span").textContent = over
-    ? `${won ? "Match won" : "Match lost"} ${score}`
-    : `${won ? "Round won" : "Round lost"} · ${score} · first to ${best}`;
+  result.querySelector("span").textContent = forfeit
+    ? (won ? `Player ${forfeit} was offline too long` : "You were offline too long")
+    : over
+      ? `${won ? "Match won" : "Match lost"} ${score}`
+      : `${won ? "Round won" : "Round lost"} · ${score} · first to ${best}`;
   for (const old of result.querySelectorAll("i")) old.remove();
   const count = won ? (over ? 140 : 70) : (over ? 50 : 24);   // confetti when you win, grey rain when you lose
   for (let n = 0; n < count; n++) {

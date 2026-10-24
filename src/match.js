@@ -10,6 +10,8 @@ const MAX_CATCH_UP = 3;             // frames run at most per tick after a stall
 const MAX_UNACKED = 10;             // updates in flight to one phone before we skip frames
 const MAX_INPUTS_PER_SECOND = 120;  // a phone sends only on change; more is abuse
 const AFTER_MATCH_MS = 6000;        // the end of a match stays on screen this long
+const PAUSE_BUDGET_MS = 30_000;     // per player and match: offline time the game waits
+const SILENT_MS = 10_000;           // a phone pings every 4 s; this long without one is gone
 const START = 0x80;
 
 // One match: two linked Game Boys that run here, and only here. Each phone is one
@@ -30,10 +32,12 @@ const START = 0x80;
 //
 // A match starts only when both players are here: phases are "lobby" (Game Boys stopped;
 // a player is ready after pressing START, and the game starts once both are online and
-// ready, already past its menus) and "playing". Once started it never pauses: a player
-// who leaves holds no buttons and the game goes on, so leaving cannot stall a match that
-// is played for money. A few seconds after a match is decided it returns to the lobby,
-// where START again means a rematch. Phones get {"t":"lobby",...} on every change.
+// ready, already past its menus), "playing" and "paused". Matches are played for money,
+// so going offline (a phone call can cut mobile data) pauses the game only from that
+// player's own budget of 30 s per match: back in time, the game goes on; still offline
+// when the budget runs out, that player loses the match. A few seconds after a match is
+// decided it returns to the lobby, where START again means a rematch. Phones get
+// {"t":"lobby",...} on every change.
 export class Match extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
@@ -52,6 +56,9 @@ export class Match extends DurableObject {
     this.rate = new Map();
     this.phase = "lobby";
     this.overAt = 0;                // when the match was decided
+    this.budget = [PAUSE_BUDGET_MS, PAUSE_BUDGET_MS];
+    this.pause = null;              // { player, since, timer } while one player is away
+    this.checkedAt = 0;
     this.timer = null;
     this.next = 0;
   }
@@ -93,11 +100,68 @@ export class Match extends DurableObject {
     this.rate.delete(ws);
     const seat = ws.deserializeAttachment();
     if (!seat?.joined || this.joined(seat.player, ws)) return;
-    this.press(seat.player, 0);                       // a player who left holds nothing
-    this.views[seat.player - 1] = null;
-    this.tell(3 - seat.player, { t: "peer", on: false });
-    if (!this.joined(1, ws) && !this.joined(2, ws)) this.stop();   // nobody left to watch
+    this.leave(ws, seat.player);
+  }
+
+  leave(ws, player) {
+    this.press(player, 0);                            // a player who left holds nothing
+    this.views[player - 1] = null;
+    this.tell(3 - player, { t: "peer", on: false });
+    if (this.phase === "playing") this.pauseFor(player);
     this.announce(ws);
+  }
+
+  // A link can die without closing (a phone switching networks): drop a phone that has
+  // not pinged for a while, so its pause starts now rather than minutes later.
+  dropSilent() {
+    const now = Date.now();
+    if (now - this.checkedAt < 1000) return;
+    this.checkedAt = now;
+    for (const ws of this.ctx.getWebSockets()) {
+      const seat = ws.deserializeAttachment();
+      if (!seat?.joined) continue;
+      const last = Math.max(this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0, seat.at ?? 0);
+      if (now - last < SILENT_MS) continue;
+      ws.serializeAttachment({ ...seat, joined: false });
+      try { ws.close(4001, "no answer"); } catch { /* already gone */ }
+      console.log(JSON.stringify({ msg: "silent", player: seat.player }));
+      if (!this.joined(seat.player, ws)) this.leave(ws, seat.player);
+    }
+  }
+
+  // `player` is away: wait for them from their pause budget, or end the match.
+  pauseFor(player) {
+    if (this.budget[player - 1] <= 0) return this.forfeit(player);
+    this.stop();
+    this.phase = "paused";
+    this.pause = { player, since: Date.now(), timer: setTimeout(() => this.forfeit(player), this.budget[player - 1]) };
+    console.log(JSON.stringify({ msg: "pause", player, budget: this.budget[player - 1] }));
+  }
+
+  resume() {
+    const { player, since, timer } = this.pause;
+    clearTimeout(timer);
+    this.budget[player - 1] = Math.max(0, this.budget[player - 1] - (Date.now() - since));
+    this.pause = null;
+    this.phase = "playing";
+    if (!this.joined(3 - player)) return this.pauseFor(3 - player);   // the other one left meanwhile
+    this.start();
+  }
+
+  // Out of pause time while offline: the other player wins the match.
+  forfeit(player) {
+    if (this.pause) clearTimeout(this.pause.timer);
+    this.pause = null;
+    this.stop();
+    const winner = 3 - player, [wins1, wins2] = this.wins;
+    this.sql.exec(SQL.addResult, winner, wins1, wins2, 1, Date.now(), "forfeit");
+    console.log(JSON.stringify({ msg: "forfeit", player, winner }));
+    for (const p of [1, 2]) {
+      this.tell(p, { t: "result", winner, wins: this.wins, best: this.rule?.best ?? 0, over: true, forfeit: player });
+    }
+    this.phase = "lobby";
+    this.overAt = 0;
+    this.announce();
   }
 
   async webSocketError(ws, error) {
@@ -123,14 +187,15 @@ export class Match extends DurableObject {
     for (const other of this.ctx.getWebSockets(`p${player}`)) {
       if (other !== ws && other.deserializeAttachment()?.joined) other.close(4000, "replaced");
     }
-    ws.serializeAttachment({ player, joined: true });
+    ws.serializeAttachment({ player, joined: true, at: Date.now() });
     ws.send(JSON.stringify({ t: "seat", player, game, token: issued, peer: this.joined(3 - player, ws) }));
     this.tell(3 - player, { t: "peer", on: true });
     this.views[player - 1] = { encoders: [new FrameEncoder(0), new FrameEncoder(1)], seq: 0, acked: 0, frameSeq: [-1, -1],
                                soundFresh: true };
     console.log(JSON.stringify({ msg: "join", player, game, claimed: issued !== null }));
 
-    if (this.phase === "playing") this.start();
+    if (this.phase === "paused" && this.pause.player === player) this.resume();
+    else if (this.phase === "playing") this.start();
     this.announce();
     if (this.machines) this.sendFrame(player);       // where the game stands
   }
@@ -157,6 +222,7 @@ export class Match extends DurableObject {
     this.rule = result;
     this.wins = [0, 0];
     this.overAt = 0;
+    this.budget = [PAUSE_BUDGET_MS, PAUSE_BUDGET_MS];
     for (const ws of this.ctx.getWebSockets()) {
       const seat = ws.deserializeAttachment();
       if (seat?.ready) ws.serializeAttachment({ ...seat, ready: false });
@@ -171,7 +237,11 @@ export class Match extends DurableObject {
   // Tells both phones who is here and ready, and what the match is doing.
   announce(except) {
     const online = [1, 2].map((p) => this.joined(p, except)), ready = [1, 2].map((p) => this.ready(p, except));
-    for (const p of [1, 2]) this.tell(p, { t: "lobby", phase: this.phase, online, ready, played: this.machines !== null });
+    const pause = this.pause &&
+      { player: this.pause.player, left: this.budget[this.pause.player - 1] - (Date.now() - this.pause.since) };
+    for (const p of [1, 2]) {
+      this.tell(p, { t: "lobby", phase: this.phase, online, ready, played: this.machines !== null, pause });
+    }
   }
 
   start() {
@@ -200,6 +270,8 @@ export class Match extends DurableObject {
     }
     if (this.next < now) this.next = now;           // fell behind: drop frames, don't spiral
     this.checkResult();
+    this.dropSilent();
+    if (this.phase !== "playing") return;            // someone went silent: paused or over
     const sound = this.machines.map((m) => m.takeSound());
     for (const player of [1, 2]) {
       this.sendFrame(player);
@@ -264,7 +336,7 @@ export class Match extends DurableObject {
       if (wins !== before + 1 || before >= this.rule.best) continue;   // unchanged, reset, or past the end
       const [wins1, wins2] = this.wins, over = wins >= this.rule.best;
       if (over) this.overAt = Date.now();
-      this.sql.exec(SQL.addResult, player, wins1, wins2, over ? 1 : 0, Date.now());
+      this.sql.exec(SQL.addResult, player, wins1, wins2, over ? 1 : 0, Date.now(), "game");
       console.log(JSON.stringify({ msg: "result", winner: player, wins: this.wins, over }));
       for (const p of [1, 2]) this.tell(p, { t: "result", winner: player, wins: this.wins, best: this.rule.best, over });
     }
