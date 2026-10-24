@@ -5,7 +5,8 @@ import { FrameDecoder } from "/frames.js";
 const BUTTONS = { right: 1, left: 2, up: 4, down: 8, a: 16, b: 32, select: 64, start: 128 };
 const KEYS = { ArrowRight: "right", ArrowLeft: "left", ArrowUp: "up", ArrowDown: "down",
                KeyX: "a", KeyZ: "b", ShiftRight: "select", Enter: "start" };
-const SHADES = [[0xe0, 0xf8, 0xd0], [0x88, 0xc0, 0x70], [0x34, 0x68, 0x56], [0x08, 0x18, 0x20]];
+// Playdate-style greys: its off-white panel to its ink, in four even steps.
+const SHADES = [[0xb1, 0xaf, 0xa8], [0x8a, 0x87, 0x80], [0x5e, 0x5b, 0x54], [0x31, 0x2f, 0x28]];
 
 const params = new URLSearchParams(location.search);
 const match = params.get("match") ?? "";
