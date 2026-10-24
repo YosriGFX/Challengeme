@@ -2,3 +2,6 @@
 __pycache__/
 build/
 .wrangler/
+# Games translated from ROMs you own (tools/add_game.py); never committed.
+src/games/local/
+roms/local/

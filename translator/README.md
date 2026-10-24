@@ -37,13 +37,19 @@ Banked code is found on its own when bank 0 switches banks with a constant
 ## Playing (server-rendered, two phones)
 
 ```sh
-python -m translator roms/linkdemo.gb -o build/linkdemo.wat --wasm   # server build (default)
-cp build/linkdemo.wasm src/games/                                      # and list it in src/games/index.js
-npx wrangler dev          # listens on http://192.168.64.10:8787 (see "dev" in wrangler.jsonc)
+python -m tools.add_game "Dr. Mario.gb" drmario "Dr. Mario"   # a cartridge you own (not committed)
+npx wrangler dev          # listens on every address, port 8787 (see "dev" in wrangler.jsonc)
 ```
 
-Open `http://192.168.64.10:8787/` on a phone, pick a game, start a match, and share the
-player 2 link. Each phone is one Game Boy: its screen and its buttons.
+Open `http://192.168.64.10:8787/` (LAN) or `http://172.20.10.3:8787/` (phone hotspot) on a
+phone, pick a game, start a match, and share the player 2 link. Each phone is one Game
+Boy: its screen and its buttons. A page on any other address needs that origin added to
+`APP_ORIGIN` in wrangler.jsonc, or its match socket is refused.
+
+`tools/add_game.py` translates the ROM for the server into `src/games/local/` and lists it
+in `src/games/local.js`; both stay out of git, so commercial ROMs never reach the repo.
+Our own homebrew games (`roms/*.gb`) are built with `python -m translator ... --wasm`,
+copied to `src/games/` and listed in `src/games/index.js`.
 
 Both Game Boys run inside the match's Durable Object (`src/match.js`), linked by cable, at
 59.73 Hz. Phones send one byte when their buttons change and receive screen updates in

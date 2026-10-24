@@ -14,12 +14,15 @@ Code in a bank jumps freely inside its own bank. A jump from bank 0 (or RAM) int
 decides where it lands. Its target bank is taken from a constant bank switch seen
 earlier on the same path (`ld a,n` then `ld ($2000-$3FFF),a`), or from hints.
 """
+import re
 from dataclasses import dataclass, field
 
 from .decoder import ALL_FLAGS, DecodeError, decode
 
 CART_ENTRY = 0x0100
 IRQ_VECTORS = (0x40, 0x48, 0x50, 0x58, 0x60)
+
+DMA_ROUTINE = re.compile(rb"\x3E.\xE0\x46\x3E.\x3D\x20\xFD\xC9", re.S)
 
 # Cartridge header byte 0x147 -> MBC family; 0x149 -> number of 8 KiB RAM banks.
 MBC_OF = {0x00: 0, 0x08: 0, 0x09: 0, 0x01: 1, 0x02: 1, 0x03: 1,
@@ -164,22 +167,82 @@ def discover(rom, ram_code=(), entries=()):
 
     default_bank = 1 if cart.mbc == 0 else None
     instrs, owner, soft, unresolved, unknown_bank = {}, {}, set(), set(), set()
-    # Work items: (key, bank switched to by a constant earlier on this path, constant in A).
-    work = [(k, None, None) for k in sorted(hard)]
+    # Work items: (key, bank switched to by a constant earlier on this path, constant in A,
+    # tentative). Tentative code was found only through a guessed inline jump table: if it
+    # fails to decode or overlaps other code, it is dropped instead of failing the build.
+    work = [(k, None, None, False) for k in sorted(hard)]
+    deferred = []                     # inline jump table entries, taken after certain code
+
+    def map_dma_routine(at):
+        """Almost every game copies the same OAM DMA routine into HRAM and calls it there
+        (`ld a,hi; ldh ($46),a; ld a,n; dec a; jr nz,-3; ret`). When code jumps into HRAM
+        and no hint says what is there, use that routine from the ROM."""
+        m = DMA_ROUTINE.search(rom[:0x8000])
+        if not m:
+            return False
+        code = m.group(0)
+        image[at:at + len(code)] = code
+        for i in range(at, at + len(code)):
+            code_ok[i] = True
+        return True
+
+    def consumes_return(bank, addr):
+        """True if the routine at addr pops its own return address before pushing, calling
+        or returning: the bytes after a call to it are then data (an inline jump table,
+        the classic RST $28 dispatcher), not code."""
+        v = view(bank)
+        for _ in range(8):
+            if not valid(key(bank, addr) if bank is not None else addr):
+                return False
+            try:
+                i = decode(v, addr)
+            except DecodeError:
+                return False
+            if i.kind == "pop":
+                return True
+            if i.kind in ("push", "call", "ret", "reti", "jp_hl", "ld_sp_hl", "add_sp_e") or i.flow != "next":
+                return False
+            addr = i.next
+        return False
+
+    def inline_table(bank, at):
+        """Code addresses listed as 16-bit words from `at`. The table ends at the first word
+        that cannot be a code address, or where an entry says code starts."""
+        out, end = [], 0x10000
+        while at < end and len(out) < 256:
+            tk0 = key(bank, at) if bank is not None else at
+            if tk0 in owner or not valid(tk0) or not valid(key(bank, at + 1) if bank is not None else at + 1):
+                break
+            w = rom[at] | (rom[at + 1] << 8) if bank is None or not in_window(at) else \
+                rom[bank * 0x4000 + (at - 0x4000)] | (rom[bank * 0x4000 + (at - 0x3FFF)] << 8)
+            if w < 0x0100 or w >= 0x8000 or (in_window(w) and bank is None and cart.mbc != 0):
+                break
+            out.append(w)
+            if at < w:
+                end = min(end, w)
+            at += 2
+        return out
     # Interrupt vectors are only code if the game can enable interrupts; otherwise they
     # are usually padding. A vector that fails to decode is left unresolved.
     optional, vectors_added = set(IRQ_VECTORS), False
 
-    while work or not vectors_added:
+    while work or deferred or not vectors_added:
+        if not work and deferred:
+            work, deferred = deferred[::-1], []
+            continue
         if not work:
             vectors_added = True
             if any(i.kind in ("ei", "reti") for i in instrs.values()):
                 hard.update(IRQ_VECTORS)
-                work.extend((v, None, None) for v in IRQ_VECTORS)
+                # Lowest first (work is a stack): a handler longer than its 8 bytes runs
+                # on over the next vector, which is then not code of its own.
+                work.extend((v, None, None, True) for v in reversed(IRQ_VECTORS))   # may be padding
             continue
-        k, hint, a_const = work.pop()
+        k, hint, a_const, tent = work.pop()
         if k in instrs:
             continue
+        if not valid(k) and 0xFF80 <= k < 0xFFFF and map_dma_routine(k):
+            pass
         if not valid(k):
             unresolved.add(k)
             continue
@@ -187,7 +250,7 @@ def discover(rom, ram_code=(), entries=()):
         try:
             ins = decode(view(bank), a)
         except DecodeError:
-            if k in optional:
+            if k in optional or tent:
                 unresolved.add(k)
                 continue
             raise
@@ -195,7 +258,7 @@ def discover(rom, ram_code=(), entries=()):
         span = [key(bank, i) if bank is not None else i for i in range(a, a + ins.length)]
         clash = next((owner[bk] for bk in span if bk in owner and owner[bk] != k), None)
         if clash is not None:
-            if k in optional:                 # a vector inside another handler's code
+            if k in optional or tent:         # a vector inside another handler's code, or a bad guess
                 unresolved.add(k)
                 continue
             raise TranslateError(f"overlapping instructions at {fmt_key(k)} and {fmt_key(clash)}")
@@ -215,7 +278,8 @@ def discover(rom, ram_code=(), entries=()):
                                              and ins.args[0] != "a"):
             a_const = None
 
-        def follow(addr, as_entry=False):
+        def follow(addr, as_entry=False, to=None, guess=False):
+            to = work if to is None else to
             if in_window(addr) and bank is None:          # bank 0 / RAM into the switchable bank
                 tb = hint if hint is not None else default_bank
                 if tb is None:
@@ -223,12 +287,12 @@ def discover(rom, ram_code=(), entries=()):
                     return
                 tk = key(tb, addr)
                 hard.add(tk)
-                work.append((tk, hint, None))
+                to.append((tk, hint, None, tent or guess))
                 return
             tk = key(bank, addr) if bank is not None else addr
             if as_entry:
                 hard.add(tk)
-            work.append((tk, hint, a_const))
+            to.append((tk, hint, a_const, tent or guess))
             return tk
 
         if ins.flow in ("next", "branch", "cexit"):
@@ -239,14 +303,29 @@ def discover(rom, ram_code=(), entries=()):
                 soft.add(tk)
         if ins.kind == "call":
             follow(ins.target, as_entry=True)
-            follow(ins.next, as_entry=True)
+            if consumes_return(bank, ins.target) and not (in_window(ins.target) and bank is None):
+                for t in inline_table(bank, ins.next):
+                    follow(t, as_entry=True, to=deferred, guess=True)
+            else:
+                follow(ins.next, as_entry=True)
         elif ins.kind in ("halt", "stop"):
             follow(ins.next, as_entry=True)
         elif ins.kind == "jp_hl":
-            # LD HL,nn right before JP (HL) gives a target known at build time.
-            prev = instrs.get(k - 3)
-            if prev and prev.kind == "ld_rp_d16" and prev.args[0] == "hl":
-                follow(prev.args[1], as_entry=True)
+            # LD HL,nn right before JP (HL) gives a target known at build time. LD HL,nn a
+            # little earlier (with a call to an indexing helper in between) is the base of
+            # a table of code addresses: `ld hl,table / call index / jp hl`.
+            for back in range(3, 13):
+                prev = instrs.get(k - back)
+                if prev and prev.kind == "ld_rp_d16" and prev.args[0] == "hl" and prev.next <= k:
+                    if back == 3:
+                        follow(prev.args[1], as_entry=True)
+                    else:
+                        tb = prev.args[1]
+                        tbank = bank if bank is not None and in_window(tb) else (default_bank if in_window(tb) else None)
+                        if tb < 0x8000 and (not in_window(tb) or tbank is not None):
+                            for t in inline_table(tbank, tb):
+                                follow(t, as_entry=True, to=deferred, guess=True)
+                    break
         elif ins.kind == "st_a16_a" and ins.args[0] < 0x8000 and bank is not None:
             # Banked code switching banks: continue through the jump table so the
             # newly mapped bank decides what runs next.

@@ -1,6 +1,10 @@
-// Worker: serves nothing but the match WebSocket. Pages and scripts are static assets
-// from ./public. The games themselves run in the Match Durable Object (src/match.js).
+// Worker: serves the match WebSocket and the list of games. Pages and scripts are static
+// assets from ./public. The games themselves run in the Match Durable Object (src/match.js).
+import { GAMES } from "./games/index.js";
+
 export { Match } from "./match.js";
+
+const GAME_LIST = Object.entries(GAMES).map(([id, { title }]) => ({ id, title }));
 
 const MATCH_ID = /^[a-z0-9]{6,16}$/;
 const GAME_ID = /^[a-z0-9_-]{1,32}$/;
@@ -14,6 +18,8 @@ export default {
     const [, scope, resource, id] = url.pathname.split("/");        // /ws/match/<id>?player=1|2[&game=<name>]
     try {
       switch (`${request.method} ${scope} ${resource}`) {
+        case "GET api games":
+          return Response.json(GAME_LIST, { headers: { "Cache-Control": "public, max-age=60" } });
         case "GET ws match": {
           if (!MATCH_ID.test(id ?? "")) return json({ error: "bad_match_id" }, 400);
           if (request.headers.get("Upgrade") !== "websocket") return json({ error: "expected_websocket" }, 426);

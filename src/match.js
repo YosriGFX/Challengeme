@@ -108,7 +108,7 @@ export class Match extends DurableObject {
     console.log(JSON.stringify({ msg: "join", player, game, claimed: issued !== null }));
 
     if (!this.machines) {
-      this.machines = [new GameBoy(GAMES[game]), new GameBoy(GAMES[game])];
+      this.machines = [new GameBoy(GAMES[game].module), new GameBoy(GAMES[game].module)];
       this.machines.forEach((m, i) => { m.buttons = this.buttons[i]; });
     }
     this.start();

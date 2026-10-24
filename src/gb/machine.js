@@ -69,6 +69,7 @@ export class GameBoy {
     this.u8 = new Uint8Array(this.buffer);
     this.i32 = new Int32Array(this.buffer);
     this.trap = null;
+    this.toSlave = null;              // link byte for the slave, due when our transfer ends
     this.x.reset();
   }
 
@@ -104,11 +105,22 @@ export class GameBoy {
 
 // A master `m` started a transfer (FF02 = 0x81). If the other side `s` is waiting on
 // its external clock (FF02 bit 7 set, bit 0 clear), the two bytes swap: the master's
-// runtime finishes its transfer with `s`'s byte, and the slave gets its byte and its
-// serial interrupt now. If both sides started as master at once, this cable still swaps
-// the two bytes (real hardware would garble them; games then retry, and two players
-// pressing together must not lock the link). If nobody answers, the master reads 0xFF.
+// runtime finishes its transfer with `s`'s byte 4096 cycles after it started, and `s` gets
+// its byte and its serial interrupt at that same moment, as on hardware (a slave that
+// heard the byte early could still overwrite FF01 before taking the interrupt, and
+// Dr. Mario then picks the wrong side). If both sides started as master at once, this
+// cable still swaps the two bytes (real hardware would garble them; games then retry,
+// and two players pressing together must not lock the link). If nobody answers, the
+// master reads 0xFF.
 function exchange(m, s) {
+  if (m.toSlave !== null && Atomics.load(m.i32, SER_PENDING >> 2) === 0) {
+    if ((s.u8[0xff02] & 0x81) === 0x80) {                // still listening
+      s.u8[0xff01] = m.toSlave;
+      s.u8[0xff02] &= 0x7f;
+      s.u8[0xff0f] |= 0x08;
+    }
+    m.toSlave = null;
+  }
   if (!pending(m)) return;
   const out = Atomics.load(m.i32, SER_TX >> 2);
   let back;
@@ -118,9 +130,7 @@ function exchange(m, s) {
     Atomics.store(s.i32, SER_RX_READY >> 2, 1);
   } else if ((s.u8[0xff02] & 0x81) === 0x80) {
     back = s.u8[0xff01];
-    s.u8[0xff01] = out;
-    s.u8[0xff02] &= 0x7f;
-    s.u8[0xff0f] |= 0x08;
+    m.toSlave = out;
   } else {
     return;
   }
