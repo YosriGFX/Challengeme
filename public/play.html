@@ -14,6 +14,7 @@
     body { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto auto; grid-template-columns: minmax(0, 1fr);
            gap: 10px; max-width: 480px; margin: 0 auto; padding: 10px 16px max(16px, env(safe-area-inset-bottom)); }
     header { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--muted); font-size: 14px; }
+    #who, #clock { white-space: nowrap; }
     #clock { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
     #clock.low { color: var(--warn); }
     header button { height: 28px; padding: 0 10px; border-radius: 14px; font-size: 12px; font-weight: 600; }
