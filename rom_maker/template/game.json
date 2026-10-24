@@ -1,0 +1,5 @@
+{
+  "title": "Coin Duel",
+  "result": { "wins": 49152, "theirs": 49153, "best": 5 },
+  "start": { "frames": 30, "inputs": [[10, 128, 0], [16, 0, 0]] }
+}
