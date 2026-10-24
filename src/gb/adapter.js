@@ -135,10 +135,12 @@ export class Adapter {
     this.blocks = new Uint8Array(total);
   }
 
+  // The $CC packet takes the place of the next ping packet, at its time.
   startTransmission() {
     this.mode = "start";
     this.at = 0;
-    this.next += PING_BYTE;
+    this.packetStart += (12.2 + (this.pingRate & 15)) * MS;
+    this.next = Math.max(this.next + PING_BYTE, this.packetStart);
   }
 
   transmission() {
@@ -150,7 +152,8 @@ export class Adapter {
     this.sending = new Uint8Array(total);
     this.blocks = new Uint8Array(total);
     this.ff = [0, 0, 0, 0];
-    this.packetStart = this.next;
+    this.packetStart += this.packetTime;         // one packet's time after the $CC packet
+    this.next = Math.max(this.next, this.packetStart);
   }
 }
 

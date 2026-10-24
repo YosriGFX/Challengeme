@@ -15,6 +15,7 @@ decides where it lands. Its target bank is taken from a constant bank switch see
 earlier on the same path (`ld a,n` then `ld ($2000-$3FFF),a`), or from hints.
 """
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 from .decoder import ALL_FLAGS, DecodeError, decode
@@ -174,6 +175,7 @@ def discover(rom, ram_code=(), entries=()):
     # fails to decode or overlaps other code, it is dropped instead of failing the build.
     work = [(k, None, None, False) for k in sorted(hard)]
     deferred = []                     # inline jump table entries, taken after certain code
+    guessed = Counter()               # how many places guessed each entry
 
     def map_dma_routine(at):
         """Almost every game copies the same OAM DMA routine into HRAM and calls it there
@@ -316,7 +318,9 @@ def discover(rom, ram_code=(), entries=()):
 
     while work or deferred or not vectors_added:
         if not work and deferred:
-            work, deferred = deferred[::-1], []
+            # Guesses named in more places go first: when two guesses overlap, the better
+            # supported one is kept and the other dropped.
+            work, deferred = sorted(deferred[::-1], key=lambda w: guessed[w[0]]), []
             continue
         if not work:
             vectors_added = True
@@ -368,6 +372,8 @@ def discover(rom, ram_code=(), entries=()):
 
         def follow(addr, as_entry=False, to=None, guess=False):
             to = work if to is None else to
+            if guess:
+                guessed[key(bank, addr) if bank is not None or not in_window(addr) else addr] += 1
             if in_window(addr) and bank is None:          # bank 0 / RAM into the switchable bank
                 tb = hint if hint is not None else default_bank
                 if tb is None:
@@ -383,6 +389,15 @@ def discover(rom, ram_code=(), entries=()):
             to.append((tk, hint, a_const, tent or guess))
             return tk
 
+        if ins.kind == "st_a16_a" and ins.args[0] >= 0x8000:
+            # ld a,lo / ld (nn),a / ld a,hi / ld (nn+1),a: a code address stored in RAM
+            # byte by byte, to be jumped to later (F-1 Pole Position's LCD handler).
+            p = chain_before(k, 3)
+            if len(p) == 3 and p[0].kind == p[2].kind == "ld_r_d8" and p[0].args[0] == p[2].args[0] == "a" \
+                    and p[1].kind == "st_a16_a" and p[1].args[0] + 1 == ins.args[0]:
+                nn = p[0].args[1] << 8 | p[2].args[1]
+                if 0x0040 <= nn < 0x4000 and nn not in owner and looks_like_code(None, nn):
+                    follow(nn, as_entry=True, to=deferred, guess=True)
         if ins.flow in ("next", "branch", "cexit"):
             follow(ins.next)
         if ins.flow in ("jump", "branch"):

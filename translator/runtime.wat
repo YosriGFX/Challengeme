@@ -76,6 +76,17 @@
                      (i32.and (local.get $pc) (i32.const 0x3FFF))))
       (else (local.get $pc))))
 
+;; A jump into work RAM that holds only `jp nn`: games point an interrupt vector at such
+  ;; a jump and rewrite nn as they go (F-1 Pole Position's LCD handler). It runs here, so
+  ;; nn needs no translated copy of the RAM.
+  (func $ram_jump (param $pc i32) (result i32)
+    (if (result i32) (i32.and (i32.lt_u (i32.sub (local.get $pc) (i32.const 0xC000)) (i32.const 0x2000))
+                              (i32.eq (i32.load8_u (local.get $pc)) (i32.const 0xC3)))
+      (then
+        (global.set $CYC (i32.add (global.get $CYC) (i32.const 16)))
+        (i32.load16_u (i32.add (local.get $pc) (i32.const 1))))
+      (else (local.get $pc))))
+
   (func $irq (param $bit i32)
     (i32.store8 (i32.const 0xFF0F) (i32.or (i32.load8_u (i32.const 0xFF0F)) (local.get $bit))))
 
@@ -584,7 +595,7 @@
                 (then (global.set $CYC (global.get $DEADLINE)))))
         (else
           (i32.atomic.store (i32.const 0x10020) (global.get $BANK))
-          (global.set $PC (call_indirect $jt (type $blk) (call $slot (global.get $PC))))))
+          (global.set $PC (call_indirect $jt (type $blk) (call $slot (call $ram_jump (global.get $PC)))))))
       (call $hw_catch_up)
       (global.set $PC (call $irq_check (global.get $PC)))
       (br_if $next (i32.lt_s (i32.sub (global.get $CYC) (global.get $FRAME_END)) (i32.const 0)))))
