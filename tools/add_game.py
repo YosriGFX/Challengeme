@@ -26,7 +26,7 @@ LOCAL = GAMES / "local"
 LIST = LOCAL / "games.json"
 MODULE = GAMES / "local.js"
 GAME_ID = re.compile(r"^[a-z0-9_-]{1,32}$")
-BUILT_IN = {"hello", "linkdemo"}
+BUILT_IN = {"drmario", "hello", "linkdemo"}
 
 
 def write_module(games):

@@ -1,12 +1,11 @@
 // One player's phone: the screen of their Game Boy and its buttons. The game runs on
 // the server; this page sends button bytes and draws the screen updates it receives.
 import { FrameDecoder } from "/frames.js";
+import { PALETTE } from "/palette.js";
 
 const BUTTONS = { right: 1, left: 2, up: 4, down: 8, a: 16, b: 32, select: 64, start: 128 };
 const KEYS = { ArrowRight: "right", ArrowLeft: "left", ArrowUp: "up", ArrowDown: "down",
                KeyX: "a", KeyZ: "b", ShiftRight: "select", Enter: "start" };
-// Playdate-style greys: its off-white panel to its ink, in four even steps.
-const SHADES = [[0xb1, 0xaf, 0xa8], [0x8a, 0x87, 0x80], [0x5e, 0x5b, 0x54], [0x31, 0x2f, 0x28]];
 
 const params = new URLSearchParams(location.search);
 const match = params.get("match") ?? "";
@@ -26,7 +25,7 @@ document.getElementById("who").textContent = `Player ${player}`;
 const ctx = document.getElementById("screen").getContext("2d");
 const image = ctx.createImageData(160, 144);
 const decoder = new FrameDecoder();
-const RGBA = new Uint32Array(SHADES.map(([r, g, b]) => (255 << 24 | b << 16 | g << 8 | r) >>> 0));
+const RGBA = new Uint32Array(PALETTE.map(([r, g, b]) => (255 << 24 | b << 16 | g << 8 | r) >>> 0));
 const pixels32 = new Uint32Array(image.data.buffer);
 
 function drawUpdate(buf) {

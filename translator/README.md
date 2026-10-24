@@ -37,7 +37,6 @@ Banked code is found on its own when bank 0 switches banks with a constant
 ## Playing (server-rendered, two phones)
 
 ```sh
-python -m tools.add_game "Dr. Mario.gb" drmario "Dr. Mario"   # a cartridge you own (not committed)
 npx wrangler dev          # listens on every address, port 8787 (see "dev" in wrangler.jsonc)
 ```
 
@@ -46,10 +45,11 @@ phone, pick a game, start a match, and share the player 2 link. Each phone is on
 Boy: its screen and its buttons. A page on any other address needs that origin added to
 `APP_ORIGIN` in wrangler.jsonc, or its match socket is refused.
 
-`tools/add_game.py` translates the ROM for the server into `src/games/local/` and lists it
-in `src/games/local.js`; both stay out of git, so commercial ROMs never reach the repo.
-Our own homebrew games (`roms/*.gb`) are built with `python -m translator ... --wasm`,
-copied to `src/games/` and listed in `src/games/index.js`.
+Committed games (`src/games/*.wasm`, listed in `src/games/index.js`) need no Python: Dr.
+Mario, the link demo and Hello World. A game is built with `python -m translator rom.gb
+-o build/x.wat --wasm`, copied to `src/games/` and listed there. To try a ROM on one
+machine without committing it, `python -m tools.add_game rom.gb id "Title"` writes it to
+`src/games/local/` and `src/games/local.js`, which stay out of git.
 
 Both Game Boys run inside the match's Durable Object (`src/match.js`), linked by cable, at
 59.73 Hz. Phones send one byte when their buttons change and receive screen updates in
