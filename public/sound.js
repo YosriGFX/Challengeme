@@ -9,7 +9,7 @@ const TRIGGERS = new Set([0x14, 0x19, 0x1e, 0x23]);
 export class Sound {
   constructor() {
     this.ctx = null;
-    this.node = null;
+    this.post = null;                   // hands messages to the sound chip once it runs
     this.gain = null;
     this.regs = new Uint8Array(0x40);
     this.last = null;                   // newest server cycle, unwrapped
@@ -27,21 +27,35 @@ export class Sound {
       if (this.ctx.state === "suspended") this.ctx.resume().catch(() => {});
       return;
     }
-    if (!window.AudioWorkletNode) return;
-    this.ctx = new AudioContext({ latencyHint: "interactive" });
-    try {
+    const Context = window.AudioContext ?? window.webkitAudioContext;
+    if (!Context) return;
+    this.ctx = new Context({ latencyHint: "interactive" });
+    this.gain = this.ctx.createGain();
+    this.gain.gain.value = this.muted ? 0 : 0.6;
+    this.gain.connect(this.ctx.destination);
+    if (this.ctx.state === "suspended") this.ctx.resume().catch(() => {});
+    let post;
+    if (this.ctx.audioWorklet) {
       await this.ctx.audioWorklet.addModule("/apu.js");
-    } catch {
-      return;
+      const node = new AudioWorkletNode(this.ctx, "gameboy-sound", { outputChannelCount: [2] });
+      node.connect(this.gain);
+      post = (msg) => node.port.postMessage(msg);
+    } else {
+      // No AudioWorklet outside https and localhost: run the same chip on the page.
+      const { Player } = await import("/apu.js");
+      const player = new Player(this.ctx.sampleRate);
+      const node = this.ctx.createScriptProcessor(1024, 0, 2);
+      node.onaudioprocess = (e) => player.render(e.outputBuffer.getChannelData(0), e.outputBuffer.getChannelData(1));
+      node.connect(this.gain);
+      this.keep = node;                   // some browsers stop a processor nobody refers to
+      post = (msg) => player.receive(msg);
     }
-    this.node = new AudioWorkletNode(this.ctx, "gameboy-sound", { outputChannelCount: [2] });
-    this.gain = new GainNode(this.ctx, { gain: this.muted ? 0 : 0.6 });
-    this.node.connect(this.gain).connect(this.ctx.destination);
     const state = [0x26, this.regs[0x26]];
     for (let r = 0x10; r < 0x40; r++) {
       if (r !== 0x26) state.push(r, TRIGGERS.has(r) ? this.regs[r] & 0x7f : this.regs[r]);
     }
-    this.node.port.postMessage({ state });
+    post({ state });
+    this.post = post;
   }
 
   setMuted(muted) {
@@ -53,7 +67,7 @@ export class Sound {
   // The server starts over (a new seat): forget the old timeline.
   reset() {
     this.last = null;
-    this.node?.port.postMessage("reset");
+    this.post?.("reset");
   }
 
   feed(buf) {
@@ -68,7 +82,7 @@ export class Sound {
       this.regs[r] = val;
     }
     const end = this.unwrap(v.getUint32(1, true));
-    this.node?.port.postMessage({ writes, end });
+    this.post?.({ writes, end });
   }
 
   // Server cycles arrive modulo 2^32; count on from the newest one.

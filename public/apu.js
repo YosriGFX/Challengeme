@@ -2,7 +2,9 @@
 // frequency sweep), a wave channel playing 32 4-bit samples, and a noise channel, mixed
 // to stereo. The game itself runs on the server; this only replays the register writes
 // the server sends (src/gb/sound.js), each at its own cycle, a fixed delay behind the
-// newest one so network hiccups don't cut the sound. AudioWorklet module, no imports.
+// newest one so network hiccups don't cut the sound. No imports: it is loaded as an
+// AudioWorklet module where the browser allows one (https or localhost), and imported by
+// sound.js for the fallback on the page itself otherwise (plain http on a LAN address).
 
 const CLOCK = 4194304;
 const DELAY = 0.12 * CLOCK;               // how far behind the newest data we play
@@ -192,9 +194,10 @@ function sweepNext(c) {
   return c.sweepDown ? c.shadow - d : c.shadow + d;
 }
 
-class GameBoySound extends AudioWorkletProcessor {
-  constructor() {
-    super();
+// Plays the server's register writes in time: render() fills output buffers.
+export class Player {
+  constructor(rate) {
+    this.rate = rate;
     this.apu = new Apu();
     this.queue = [];             // [cycle, register, value], in order
     this.head = 0;
@@ -205,7 +208,6 @@ class GameBoySound extends AudioWorkletProcessor {
     this.capL = 0;
     this.capR = 0;
     this.lr = [0, 0];
-    this.port.onmessage = (e) => this.receive(e.data);
   }
 
   // {writes: [cycle, register, value, ...], end} from the page, cycles already unwrapped;
@@ -245,10 +247,9 @@ class GameBoySound extends AudioWorkletProcessor {
     if (this.head > 512) { q.splice(0, this.head); this.head = 0; }
   }
 
-  process(inputs, outputs) {
-    const [left, right = left] = outputs[0];
-    if (!left || this.now === null) return true;
-    const dt = (CLOCK / sampleRate) * this.speed;
+  render(left, right) {
+    if (this.now === null) { left.fill(0); right.fill(0); return; }
+    const dt = (CLOCK / this.rate) * this.speed;
     const charge = Math.pow(0.999958, dt);
     for (let i = 0; i < left.length; i++) {
       this.applyUntil(this.now);
@@ -261,8 +262,22 @@ class GameBoySound extends AudioWorkletProcessor {
       left[i] = l;
       right[i] = r;
     }
-    return true;
   }
 }
 
-registerProcessor("gameboy-sound", GameBoySound);
+if (typeof AudioWorkletProcessor === "function") {
+  class GameBoySound extends AudioWorkletProcessor {
+    constructor() {
+      super();
+      this.player = new Player(sampleRate);
+      this.port.onmessage = (e) => this.player.receive(e.data);
+    }
+
+    process(inputs, outputs) {
+      const [left, right = left] = outputs[0];
+      if (left) this.player.render(left, right);
+      return true;
+    }
+  }
+  registerProcessor("gameboy-sound", GameBoySound);
+}

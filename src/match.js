@@ -45,6 +45,7 @@ export class Match extends DurableObject {
     this.rule = null;               // how this game shows who won (GAMES[game].result)
     this.wins = [0, 0];             // round wins last seen in each Game Boy's memory
     this.buttons = [0, 0];
+    this.taps = [0, 0];             // buttons pressed since the last frame, even if let go
     this.views = [null, null];      // per player: what that phone has been sent, per screen
     this.shades = new Uint8Array(W * H);
     this.rate = new Map();
@@ -156,6 +157,7 @@ export class Match extends DurableObject {
       runLinked(a, b, FRAME_CYCLES);
     }
     this.buttons = [0, 0];
+    this.taps = [0, 0];
     for (const m of this.machines) { m.buttons = 0; m.takeSound(); }
     this.rule = result;
     this.wins = [0, 0];
@@ -195,6 +197,11 @@ export class Match extends DurableObject {
     for (let n = 0; this.next <= now && n < MAX_CATCH_UP; n++) {
       runLinked(a, b, FRAME_CYCLES);
       this.next += PERIOD;
+      if (this.taps[0] | this.taps[1]) {
+        this.taps = [0, 0];
+        a.buttons = this.buttons[0];
+        b.buttons = this.buttons[1];
+      }
     }
     if (this.next < now) this.next = now;           // fell behind: drop frames, don't spiral
     this.checkResult();
@@ -272,7 +279,11 @@ export class Match extends DurableObject {
     if ((bits & 0x03) === 0x03) bits &= ~0x03;      // right + left
     if ((bits & 0x0c) === 0x0c) bits &= ~0x0c;      // up + down
     this.buttons[player - 1] = bits;
-    if (this.machines) this.machines[player - 1].buttons = bits;
+    this.taps[player - 1] |= bits;                  // a tap shorter than a frame still counts
+    let held = bits | this.taps[player - 1];
+    if ((held & 0x03) === 0x03) held = (held & ~0x03) | (bits & 0x03);   // the latest direction wins
+    if ((held & 0x0c) === 0x0c) held = (held & ~0x0c) | (bits & 0x0c);
+    if (this.machines) this.machines[player - 1].buttons = held;
   }
 
   joined(player, except) {
