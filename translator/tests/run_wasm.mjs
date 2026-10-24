@@ -3,7 +3,8 @@
 // machine module as the browser worker.
 //   node run_wasm.mjs game.wasm <frames> [hexStart:len ...] [--fb] [--buttons=HEX]
 //   node run_wasm.mjs --link a.wasm b.wasm <frames> [hexStart:len ...] [--buttons=HEX]
-// --buttons holds the joypad bits of the first machine (bit 0 Right ... bit 7 Start).
+// --buttons / --buttons2 hold the joypad bits of the first / second machine
+// (bit 0 Right ... bit 7 Start).
 import { readFileSync } from "node:fs";
 import { FRAME_CYCLES, GameBoy, memoryPages, runLinked } from "../../public/gb/machine.js";
 
@@ -11,6 +12,7 @@ const args = process.argv.slice(2);
 const flags = new Set(args.filter((a) => a.startsWith("--")));
 const pos = args.filter((a) => !a.startsWith("--"));
 const buttons = [...flags].find((f) => f.startsWith("--buttons="));
+const buttons2 = [...flags].find((f) => f.startsWith("--buttons2="));
 const linked = flags.has("--link");
 const files = pos.splice(0, linked ? 2 : 1);
 const [frames = "1", ...ranges] = pos;
@@ -20,6 +22,7 @@ const machines = files.map((f) => {
   return new GameBoy(new WebAssembly.Module(bytes), memoryPages(bytes));
 });
 if (buttons) machines[0].buttons = parseInt(buttons.split("=")[1], 16);
+if (buttons2) machines[1].buttons = parseInt(buttons2.split("=")[1], 16);
 
 for (let i = 0; i < Number(frames); i++) {
   if (linked) runLinked(machines[0], machines[1], FRAME_CYCLES);

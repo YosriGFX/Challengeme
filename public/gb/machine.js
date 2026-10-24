@@ -98,15 +98,31 @@ export class GameBoy {
 // A master `m` started a transfer (FF02 = 0x81). If the other side `s` is waiting on
 // its external clock (FF02 bit 7 set, bit 0 clear), the two bytes swap: the master's
 // runtime finishes its transfer with `s`'s byte, and the slave gets its byte and its
-// serial interrupt now. If nobody is waiting, the master reads 0xFF, as with no cable.
+// serial interrupt now. If both sides started as master at once, this cable still swaps
+// the two bytes (real hardware would garble them; games then retry, and two players
+// pressing together must not lock the link). If nobody answers, the master reads 0xFF.
 function exchange(m, s) {
-  if (!Atomics.load(m.i32, SER_PENDING >> 2) || Atomics.load(m.i32, SER_RX_READY >> 2)) return;
-  if ((s.u8[0xff02] & 0x81) !== 0x80) return;
-  Atomics.store(m.i32, SER_RX >> 2, s.u8[0xff01]);
+  if (!pending(m)) return;
+  const out = Atomics.load(m.i32, SER_TX >> 2);
+  let back;
+  if (pending(s)) {
+    back = Atomics.load(s.i32, SER_TX >> 2);
+    Atomics.store(s.i32, SER_RX >> 2, out);
+    Atomics.store(s.i32, SER_RX_READY >> 2, 1);
+  } else if ((s.u8[0xff02] & 0x81) === 0x80) {
+    back = s.u8[0xff01];
+    s.u8[0xff01] = out;
+    s.u8[0xff02] &= 0x7f;
+    s.u8[0xff0f] |= 0x08;
+  } else {
+    return;
+  }
+  Atomics.store(m.i32, SER_RX >> 2, back);
   Atomics.store(m.i32, SER_RX_READY >> 2, 1);
-  s.u8[0xff01] = Atomics.load(m.i32, SER_TX >> 2);
-  s.u8[0xff02] &= 0x7f;
-  s.u8[0xff0f] |= 0x08;
+}
+
+function pending(m) {
+  return Atomics.load(m.i32, SER_PENDING >> 2) !== 0 && Atomics.load(m.i32, SER_RX_READY >> 2) === 0;
 }
 
 // Runs two machines connected by a link cable, in step, one scanline at a time.

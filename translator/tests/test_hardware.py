@@ -188,6 +188,13 @@ class HardwareTest(unittest.TestCase):
         self.assertEqual(p2["FF80"], [0, 0x01], "player 2 received A from player 1")
         self.assertEqual((p1["FF47"], p2["FF47"]), ([0x2C], [0x34]), "dark half = held buttons")
 
+    def test_link_demo_both_players_pressing(self):
+        demo = self.wasm(make_link_demo_rom.build(), "linkdemo")
+        res = run("--link", demo, demo, 6, "FF80:2", "FF47:1", "--buttons=10", "--buttons2=20")  # A and B
+        p1, p2 = (x["dump"] for x in res["machines"])
+        self.assertEqual((p1["FF80"], p2["FF80"]), ([1, 0x02], [1, 0x01]), "both masters still swap")
+        self.assertEqual((p1["FF47"], p2["FF47"]), ([0x3C], [0x3C]), "both halves dark on both")
+
     def test_serial_without_partner_reads_ff(self):
         res = run(self.wasm(serial_rom(0x42, 0x81), "alone"), 1, "C000:1")
         self.assertEqual(res["dump"]["C000"], [0xFF])
