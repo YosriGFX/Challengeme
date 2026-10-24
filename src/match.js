@@ -28,10 +28,11 @@ const START = 0x80;
 // player from being a black box; it is still only pixels. Each phone also gets its own
 // Game Boy's sound register writes (format: gb/sound.js).
 //
-// A match runs only while both players are here: phases are "lobby" (Game Boys stopped;
+// A match starts only when both players are here: phases are "lobby" (Game Boys stopped;
 // a player is ready after pressing START, and the game starts once both are online and
-// ready, already past its menus), "playing", and "paused" (someone left; the game goes on
-// when they are back). A few seconds after a match is decided it returns to the lobby,
+// ready, already past its menus) and "playing". Once started it never pauses: a player
+// who leaves holds no buttons and the game goes on, so leaving cannot stall a match that
+// is played for money. A few seconds after a match is decided it returns to the lobby,
 // where START again means a rematch. Phones get {"t":"lobby",...} on every change.
 export class Match extends DurableObject {
   constructor(ctx, env) {
@@ -95,10 +96,7 @@ export class Match extends DurableObject {
     this.press(seat.player, 0);                       // a player who left holds nothing
     this.views[seat.player - 1] = null;
     this.tell(3 - seat.player, { t: "peer", on: false });
-    if (this.phase === "playing") {
-      this.phase = "paused";
-      this.stop();
-    }
+    if (!this.joined(1, ws) && !this.joined(2, ws)) this.stop();   // nobody left to watch
     this.announce(ws);
   }
 
@@ -132,10 +130,7 @@ export class Match extends DurableObject {
                                soundFresh: true };
     console.log(JSON.stringify({ msg: "join", player, game, claimed: issued !== null }));
 
-    if (this.phase === "paused" && this.joined(3 - player)) {
-      this.phase = "playing";
-      this.start();
-    }
+    if (this.phase === "playing") this.start();
     this.announce();
     if (this.machines) this.sendFrame(player);       // where the game stands
   }

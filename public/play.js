@@ -104,21 +104,19 @@ function setSolo(solo) {
 viewButton.addEventListener("click", () => setSolo(!document.body.classList.contains("solo")));
 try { setSolo(localStorage.getItem("solo") === "1"); } catch { setSolo(false); }
 
-// ---- lobby: the server starts the match once both players are online and pressed START
+// ---- lobby: the server starts the match once both players are online and pressed START;
+// once started it never pauses
 const lobby = document.getElementById("lobby");
 let phase = null;
 
 function showLobby({ phase: next, online, ready, played }) {
   const me = Number(player) - 1, other = 1 - me;
-  if (next === "playing" && phase !== "playing" && phase !== "paused") sound.reset();   // a new match
+  if (next === "playing" && phase !== "playing") sound.reset();   // a new match
   phase = next;
   lobby.classList.toggle("show", next !== "playing");
   document.body.classList.toggle("lobby", next === "lobby" && !ready[me]);
   let title, hint;
-  if (next === "paused") {
-    title = "Paused";
-    hint = `Player ${other + 1} went offline. The game goes on when they are back.`;
-  } else if (!ready[me]) {
+  if (!ready[me]) {
     title = played ? "Rematch?" : "Ready?";
     hint = "Press START when you are ready.";
   } else {
