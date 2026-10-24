@@ -2,8 +2,10 @@
 
 No C, no compiler: a game is a few `.asm` text files that the RGBDS assembler turns into
 a `.gb` ROM, byte for byte what you wrote. That is also what the translator handles best.
-[template/](template/) is a complete two-player game (Coin Duel) written this way; read
-it next to this page. [HARDWARE.md](HARDWARE.md) has the engine's rules.
+Two complete games are written this way; read the one you start from next to this page:
+[template/](template/) (Coin Duel, two players on the link cable) and
+[skyhop/](skyhop/) (Sky Hop, two to four players on the 4-Player Adapter).
+[HARDWARE.md](HARDWARE.md) has the engine's rules.
 
 ## 1. Tools and files
 
@@ -18,10 +20,12 @@ A game is one folder:
 | `main.asm` | the code; the only file assembled, it `INCLUDE`s the others |
 | `hardware.inc` | register names (`rLCDC`, `rSC`, ...) and constants |
 | `tiles.asm` | graphics, as rows of shade digits |
-| `game.json` | title, where the win counters are, the server's `start` script |
+| `game.json` | title, players, link, where the win counters are, the server's `start` script |
+| `bot.mjs` | a bot that plays the game, for whole-match tests (section 12) |
 
-`python3 tools/build.py <folder>` builds `<folder>/build/game.gb`, `game.sym` (every label
-and its address), `game.map`, `game.wasm`, and screenshots.
+`python3 tools/new.py <folder> "<Title>" [--players 4]` starts one from the right
+example. `python3 tools/build.py <folder>` builds `<folder>/build/game.gb`, `game.sym`
+(every label and its address), `game.map`, `game.wasm`, and screenshots.
 
 ## 2. RGBDS in five minutes
 
@@ -129,7 +133,7 @@ Never turn the LCD off outside VBlank on a real Game Boy (the template's `LcdOff
 `PAD_DOWN`, `PAD_A`, `PAD_B`, `PAD_SELECT`, `PAD_START` set while held. For "just
 pressed", keep last frame's byte: `pressed = now & ~last`.
 
-## 8. Two players: link and lockstep
+## 8. Two players: link cable and lockstep
 
 Both Game Boys run the same ROM on the server. The template's way, which you should keep:
 
@@ -151,9 +155,39 @@ the handshake. Call the random generator the same number of times on both sides.
 More data per frame: send several bytes in a row (each is one more transfer, about
 1 ms; up to 15 a frame is fine).
 
-## 9. Wins, losses and the server
+## 9. Three or four players: the 4-Player Adapter
 
-Keep, on each Game Boy, "rounds my player won" and "rounds the other player won" at
+With more than two players (or `"link": "adapter"` in `game.json`), the Game Boys are
+joined by Nintendo's 4-Player Adapter (DMG-07). The adapter clocks every byte; each Game
+Boy only listens (`SC = $80`) and answers. [skyhop/main.asm](skyhop/main.asm) does it
+all in the serial interrupt (`SerialIsr`); keep that code as it is:
+
+1. **Ping phase.** The adapter sends packets `$FE, STAT, STAT, STAT` to every port.
+   `STAT` bits 4-7 are the ports with a Game Boy answering, bits 0-2 this port's player
+   number (1-4). Answer `$88, $88, RATE, SIZE` (Sky Hop: RATE 0, SIZE 1). Each answer is
+   what you put in `SB` after a byte arrives; the adapter reads it with the next byte.
+2. **Start.** Player 1's START makes it answer `$AA` to a whole packet. The adapter then
+   sends `$CC` four times and the game packets begin. The server's `start` script
+   presses START on Game Boy 1.
+3. **Game packets.** Each packet is 4 x SIZE bytes, the same on every port: every
+   player's block from the packet before, player 1 first (an empty port gives zeros).
+   Your block is your answers to the packet's first SIZE bytes. Sky Hop sends its
+   buttons as its 1-byte block. **Never send `$FF`**: a packet's worth of `$FF` ends the
+   game packets (Sky Hop clears the SELECT bit, so its byte is never `$FF`).
+4. **Lockstep.** Queue each complete packet in the interrupt and run **one game tick per
+   packet** in the main loop, from the four button bytes. Every Game Boy gets the same
+   packets, so every screen agrees. Packets come every 17 ms (about one a frame); draw
+   in the V-Blank interrupt, not in the tick.
+5. **Who plays:** the last `STAT` before the game says which ports are connected (Sky
+   Hop's `wMask`) and which player this Game Boy is (`wMe`). Highlight your own player
+   (Sky Hop draws it with OBP1) and show every player's score.
+
+Randomness: there is no seed exchange; Sky Hop mixes the four button bytes into its
+random generator every tick (`MixSeed`), the same on every Game Boy.
+
+## 10. Wins, losses and the server
+
+With **two players on the cable**, keep, on each Game Boy, "rounds my player won" and "rounds the other player won" at
 fixed addresses (template: `$C000` and `$C001`), both counting up by one per round, and
 0 at the start. The server reads them on both Game Boys; once they agree it shows YOU WIN /
 YOU LOSE on the phones and records it. `game.json`:
@@ -171,19 +205,36 @@ end the match. `start` is run on the server before the players see anything: fro
 10 Game Boy 1 holds START (128), from 16 nothing. After the match the server goes back
 to its lobby and starts fresh Game Boys for a rematch, so the ROM needs no rematch menu.
 
-After each round, put both players back at their start and wait until **both** have
-pressed START (a new press, not one held from before) before the next round begins;
-show PRESS START, and OK for whoever is ready. The template does this with `wWait`,
-`wReady1`/`wReady2` and `wLast1`/`wLast2` in `Update`.
+With **the adapter (any number of players)**, keep every player's round wins on every
+Game Boy, player 1 first (Sky Hop: `$C000-$C003`), and give the first address as
+`winsBy` instead of `wins`/`theirs`:
+
+```json
+{
+  "title": "Sky Hop", "players": 4, "minPlayers": 2, "link": "adapter",
+  "result": { "winsBy": 49152, "best": 3, "bestAt": 49156, "bestChoices": [1, 2, 3, 4, 5, 7, 9] },
+  "start": { "frames": 30, "inputs": [[10, 128, 0, 0, 0], [16, 0, 0, 0, 0]] }
+}
+```
+
+The server counts a round once every Game Boy agrees on the new number; the phones show
+everybody's score. `players`/`minPlayers` are the most and fewest seats (whoever opens
+the match picks), `inputs` rows have one button byte per player.
+
+After each round, put the players back at their start and wait until **every** player
+has pressed START (a new press, not one held from before) before the next round begins;
+show PRESS START and who is ready. Coin Duel does this with `wWait`, `wReady1`/`wReady2`
+and `wLast1`/`wLast2` in `Update`; Sky Hop with `wReady` and `wPrev` in `WaitRound`.
 
 Let the players choose the match length: read the round wins that win the match from a
-third fixed byte (template: `wBest` at `$C002`, 0 = the ROM's own default) and list it in
+fixed byte after the counters (Coin Duel: `wBest` at `$C002`, Sky Hop at `$C004`; 0 = the
+ROM's own default) and list it in
 `game.json` as `"bestAt": 49154` with `"bestChoices": [1, 2, 3, 4, 5, 7, 9]` inside
 `result`. The start page then shows a "Rounds to win the match" choice, and the server
-writes the chosen number to that byte on both Game Boys right after the `start` script.
+writes the chosen number to that byte on every Game Boy right after the `start` script.
 Keep the choices at 9 or less if the score is shown as one digit.
 
-## 10. Bigger games
+## 11. Bigger games
 
 - More than 32 KiB: use MBC5 (`rgbfix -m 0x19`, `SECTION "Level", ROMX, BANK[2]`).
   Switch with a constant right before the call: `ld a, BANK(Fn) / ld [$2000], a /
@@ -194,7 +245,26 @@ Keep the choices at 9 or less if the score is shown as one digit.
   ($FF10-14), 2 square ($FF16-19), 3 wave ($FF1A-1E, samples at $FF30-3F), 4 noise
   ($FF20-23). Turn sound on with `rNR52 = $80`, `rNR50 = $77`, `rNR51 = $FF`.
 
-## 11. When the build says STOPPED
+## 12. Testing a whole match with a bot
+
+A screenshot shows a moment; a bot plays a whole match. `bot.mjs` (see
+[template/bot.mjs](template/bot.mjs), [skyhop/bot.mjs](skyhop/bot.mjs)) is called
+before every frame and presses buttons for each player from the game's RAM:
+
+```js
+export default function bot({ frame, players, ram, press }) {
+  const x = ram(1, "wP1X");            // a label from build/game.sym, read on Game Boy 1
+  const h = ram(2, "wPHl", 1);         // label + offset: element 1 of an array
+  press(1, x < 80 ? 0x01 : 0x02);      // hold right or left (01 right ... 80 start)
+}
+```
+
+`python3 tools/build.py <folder> --bot <folder>/bot.mjs --frames 30000 --shots ""` plays
+until the match is decided and prints every round (`match over, player N wins`). Make
+the bots differ in skill so different players win rounds, and make them press START
+between rounds.
+
+## 13. When the build says STOPPED
 
 `GB1 STOPPED: no translated code at 0123` means the game jumped somewhere the translator
 did not see as code. Look the address up in `build/game.sym`, then see

@@ -16,10 +16,11 @@ tiles), the sound (as sound register writes), and send back one byte of buttons.
 So write the game exactly as for a real Game Boy. In this folder that means RGBDS
 assembly ([ASSEMBLY.md](ASSEMBLY.md)): no C compiler, and the code the translator handles
 best. GBDK-2020 (C) works too (section 8). `tools/build.py` assembles, translates and
-plays the game on two linked Game Boys in one go.
+plays the game on linked Game Boys in one go.
 
-Each match is two Game Boys joined by a link cable, both on the server. Player 1's phone
-shows Game Boy 1 big and Game Boy 2 small (picture-in-picture); player 2's the other way.
+Each match is two to four Game Boys, all on the server: two joined by a link cable, or
+two to four by the 4-Player Adapter (section 6). Each phone shows its own Game Boy big
+and the others small (picture-in-picture).
 
 ## 2. Hardware that works
 
@@ -43,8 +44,7 @@ shows Game Boy 1 big and Game Boy 2 small (picture-in-picture); player 2's the o
 - The MBC3 real-time clock.
 - The joypad interrupt (poll FF00 instead, once per frame).
 - Changes in the middle of a line (each line is drawn in one go).
-- Games for more than two players: the server already has the 4-Player Adapter (section
-  6), but writing new games for it is on hold. Write two-player games for now.
+- More than four players (a bigger hub of our own is an idea for later).
 
 ## 4. Rules for code the translator can follow
 
@@ -69,15 +69,16 @@ branch, and recognises common jump tables. Code it cannot find stops that Game B
 
 If a build stops at an address, TRANSLATOR.md section 4 explains how to find out why.
 
-## 5. Making a good two-player game
+## 5. Making a good multiplayer game
 
 The server owns everything; phones only see and press. That gives you these guarantees
 for free, and a few things to do:
 
-- **Fairness:** both Game Boys run on one machine in lockstep, one scanline apart at
-  most. Use the link to share one random seed at the start (player 1's Game Boy picks it
-  and sends it), so both players get the same luck, as Tetris does with its pieces.
-- **Who is master:** both Game Boys boot identically, so the game must decide by a
+- **Fairness:** all Game Boys run on one machine in lockstep, one scanline apart at
+  most. Give every player the same luck: on the cable, player 1's Game Boy picks a seed
+  and sends it (as Tetris does with its pieces); on the adapter, mix the shared button
+  bytes into the generator every tick (Sky Hop).
+- **Who is master (cable):** both Game Boys boot identically, so the game must decide by a
   handshake: each side waits on the external clock (`FF02 = $80`), and the side whose
   player presses START first becomes master (`FF02 = $81`) and sends. To make Game Boy 1
   (player 1) always the master, have the game's `start` script press START on Game Boy 1
@@ -86,44 +87,67 @@ for free, and a few things to do:
   The slave gets its byte and its serial interrupt when the master's transfer ends. If
   both sides start as master at the same moment, the server still swaps the two bytes
   (real hardware would garble them).
-- **Exchange inputs every frame** (or a small state), and run both sides from the same
-  inputs: lockstep keeps both screens in agreement.
-- **Win and loss:** keep each side's round wins in fixed RAM addresses, one for "my wins"
-  and one for "their wins", and count up by one per round. Then a `result` line in
-  `src/games/index.js` lets the server announce rounds and the match winner on the phones
-  (TRANSLATOR.md, "Wins and losses"). Reset both to 0 for a new match.
+- **Exchange inputs every frame** (cable) or every packet (adapter), and run every
+  side from the same inputs: lockstep keeps all screens in agreement.
+- **Win and loss:** keep round wins in fixed RAM addresses and count up by one per
+  round: "my wins" and "their wins" on the cable, every player's wins (player 1 first) on
+  the adapter. Then the `result` in `game.json` lets the server announce rounds and the
+  match winner on the phones (ASSEMBLY.md section 10). Between rounds, wait for START
+  from every player.
 - **Start fast:** the lobby already makes both players press START before the game runs.
   Boot straight into the two-player match, or keep the menu to one screen, so the `start`
   script stays short or is not needed at all.
-- **Both screens are visible to both players.** Design for it: no hidden information on
+- **Every screen is visible to every player.** Design for it: no hidden information on
   your own screen that the other player must not see.
 - **Sound:** each player hears their own Game Boy only.
 
-## 6. More players (on hold)
+## 6. The 4-Player Adapter (DMG-07)
 
-The server can join up to four Game Boys with Nintendo's 4-Player Adapter (DMG-07,
-`src/gb/adapter.js`, following Pan Docs' "4-Player Adapter" page); Den of Snakes, an
-open-source GBDK game for it, plays on it. Matches, lobby and phone page handle up to
-four seats. New 4-player games are on hold for now: write two-player games. A 6-port
-hub of our own, and one Game Boy with several joypads, are ideas for later.
+`src/gb/adapter.js` joins two to four Game Boys the way Nintendo's adapter does (Pan
+Docs "4-Player Adapter", Shonumi's notes, bbbbbr's logic-analyzer captures). Den of
+Snakes (GBDK), F-1 Pole Position and Sky Hop play on it. Exactly what it does:
+
+- **Clock.** The adapter is the only clock: every Game Boy waits with `SC = $80`. On each
+  byte, a listening Game Boy gets the byte in `SB` and its serial interrupt; the adapter
+  gets what that Game Boy had in `SB`. So a Game Boy's answer to byte k is what it puts
+  in `SB` after byte k, and the adapter reads it during byte k + 1. A Game Boy that is
+  not listening answers `$FF` (or `$00` if `SB` bit 7 is 0); an empty port answers 0.
+- **Ping phase.** Packets of 4 bytes, 1.43 ms apart, one packet every 12.2 ms +
+  (RATE & 15) ms: `$FE, STAT, STAT, STAT`. `STAT` = bits 4-7: ports that answered
+  `$88, $88` in the packet before (port 1 = bit 4); bits 0-2: the receiving port's
+  number, 1-4. Each Game Boy answers `$88, $88, RATE, SIZE`; RATE and SIZE count from
+  player 1 only (SIZE 1-4 bytes per player per packet).
+- **Start.** A Game Boy answering `$AA` to `$FE` and the first two `STAT`s starts the
+  game: the next packet is `$CC, $CC, $CC, $CC` (at ping timing), and the game packets
+  begin one packet time later.
+- **Game packets.** 4 x SIZE bytes, the same to every port, 0.128 + (RATE >> 4) x 0.106
+  + 0.887 ms apart; one packet every max(17 + (RATE & 15) ms, all its bytes + 1 ms).
+  Each packet carries every port's block from the packet before, port 1 first; a port's
+  block is its answers to the first SIZE bytes. The first packet is all zeros.
+- **Back to ping.** A whole packet's worth of `$FF` in a row from one Game Boy: every
+  port gets one packet of `$FF`, then ping packets again.
+- **Seats.** Player N's phone is port N. With fewer players the other ports are empty.
+
+How a game uses it, in assembly: ASSEMBLY.md section 9 and `skyhop/main.asm`.
 
 ## 7. From source to a match
 
 1. From `rom_maker/`: `python3 tools/build.py mygame` assembles `mygame/main.asm`,
-   translates it and runs two linked Game Boys (`--script`, `--shots`, `--frames`).
-   It ends with `GB1 ok` / `GB2 ok` when no code is missing, and writes
-   `mygame/build/game.gb`, `game.wasm` and screenshots.
+   translates it and runs as many linked Game Boys as `game.json` says (`--script`,
+   `--shots`, `--frames`, `--bot`). It ends with `GB1 ok`, `GB2 ok`, ... when no code is
+   missing, and writes `mygame/build/game.gb`, `game.wasm` and screenshots.
 2. Add it to the server, from the repository root:
    `python -m tools.add_game rom_maker/mygame/build/game.gb mygame "My Game" --meta rom_maker/mygame/game.json`
    (only on this machine), or copy `game.wasm` to `src/games/` and add a line to
-   `src/games/index.js` with the `result` and `start` from `mygame/game.json`.
-3. Run `npx wrangler dev`, open the page on two phones, press START on both.
+   `src/games/index.js` with the `result`, `start`, `players`, `minPlayers` and `link`
+   from `mygame/game.json`.
+3. Run `npx wrangler dev`, open the page on the phones, press START on each.
 
 ## 8. GBDK-2020 (C) instead of assembly
 
 GBDK-2020 4.3 output translates (tested with Den of Snakes): build the `.gb` with its
 `make`, then run the translator on it (`python -m translator game.gb -o game.wat --wasm`
-from the repository root) and `tools/run2.mjs` on the `.wasm`. Register interrupt
+from the repository root) and `tools/run.mjs` on the `.wasm`. Register interrupt
 handlers with `add_VBL(handler)` and friends as usual. Avoid calling through function
 pointers kept in variables; where you must, keep each target's address in a `const`
 table in ROM.
