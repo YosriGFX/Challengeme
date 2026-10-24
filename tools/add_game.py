@@ -2,6 +2,7 @@
 """Add a game translated from a cartridge ROM you own to this machine's Worker.
 
     python -m tools.add_game "Dr. Mario.gb" drmario "Dr. Mario" [--hints hints.json]
+    python -m tools.add_game rom_maker/duel/build/game.gb duel "Duel" --meta rom_maker/duel/game.json
     python -m tools.add_game --remove drmario
 
 Translates the ROM for the server (src/games/local/<id>.wasm) and rewrites
@@ -38,7 +39,9 @@ def write_module(games):
         lines.append(f'import g{n} from "./local/{g["id"]}.wasm";')
     lines.append("export default [")
     for n, g in enumerate(games):
-        lines.append(f'  {{ id: {json.dumps(g["id"])}, title: {json.dumps(g["title"])}, module: g{n} }},')
+        extra = "".join(f", {k}: {json.dumps(g[k])}" for k in ("result", "start", "players", "minPlayers", "link")
+                        if k in g)
+        lines.append(f'  {{ id: {json.dumps(g["id"])}, title: {json.dumps(g["title"])}, module: g{n}{extra} }},')
     lines.append("];")
     MODULE.write_text("\n".join(lines) + "\n")
     subprocess.run(["git", "-C", str(ROOT), "update-index", "--skip-worktree", "src/games/local.js"],
@@ -51,6 +54,7 @@ def main(argv=None):
     ap.add_argument("id", nargs="?", help="short name: a-z, 0-9, _ and -")
     ap.add_argument("title", nargs="?", help="name shown on the start page")
     ap.add_argument("--hints", type=Path)
+    ap.add_argument("--meta", type=Path, help="game.json from rom_maker: result, start (and players)")
     ap.add_argument("--remove", metavar="ID")
     args = ap.parse_args(argv)
 
@@ -74,7 +78,11 @@ def main(argv=None):
                 return 1
             (LOCAL / f"{args.id}.wasm").write_bytes(wat.with_suffix(".wasm").read_bytes())
         title = args.title or args.id
-        games = [g for g in games if g["id"] != args.id] + [{"id": args.id, "title": title}]
+        entry = {"id": args.id, "title": title}
+        if args.meta:
+            meta = json.loads(args.meta.read_text())
+            entry.update({k: meta[k] for k in ("result", "start", "players", "minPlayers", "link") if k in meta})
+        games = [g for g in games if g["id"] != args.id] + [entry]
 
     LIST.write_text(json.dumps(games, indent=2) + "\n")
     write_module(games)
