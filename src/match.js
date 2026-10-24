@@ -1,15 +1,13 @@
 import { DurableObject } from "cloudflare:workers";
 import { GAMES } from "./games/index.js";
-import { FRAME_CYCLES, FRAME_HZ, GameBoy, PACKED_BYTES, PACKED_ROW, runLinked } from "./gb/machine.js";
+import { FrameEncoder, H, W } from "./gb/frames.js";
+import { FRAME_CYCLES, FRAME_HZ, GameBoy, runLinked } from "./gb/machine.js";
 import { SQL } from "./sql.js";
 
 const PERIOD = 1000 / FRAME_HZ;
 const MAX_CATCH_UP = 3;             // frames run at most per tick after a stall
 const MAX_UNACKED = 6;              // frames in flight to one phone before we skip frames
 const MAX_INPUTS_PER_SECOND = 120;  // a phone sends only on change; more is abuse
-const ROWS = 144;
-const MASK_BYTES = ROWS / 8;
-const MSG_FRAME = 1;
 
 // One match: two linked Game Boys that run here, and only here. Each phone is one
 // player's screen and controller. Cheating is designed out rather than detected:
@@ -21,9 +19,8 @@ const MSG_FRAME = 1;
 //
 // Phone -> here: text {"t":"join","token":...} once, then binary: 1 byte = buttons,
 // 2 bytes = ack of frame `seq` (little-endian).
-// Here -> phone: text {"t":"seat"|"peer"|"trap",...}; binary frames:
-//   [1][seq u16 LE][18-byte mask, bit r = row r follows][40 bytes per row, 2 bits per pixel]
-// Only rows that changed since the last frame sent to that phone are included.
+// Here -> phone: text {"t":"seat"|"peer"|"trap",...}; binary screen updates carrying only
+// what changed since the last update that phone was sent (format: gb/frames.js).
 export class Match extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
@@ -34,7 +31,7 @@ export class Match extends DurableObject {
     this.machines = null;           // [GameBoy, GameBoy], rebuilt after eviction
     this.buttons = [0, 0];
     this.views = [null, null];      // per player: what that phone has been sent
-    this.packed = new Uint8Array(PACKED_BYTES);
+    this.shades = new Uint8Array(W * H);
     this.rate = new Map();
     this.timer = null;
     this.next = 0;
@@ -107,7 +104,7 @@ export class Match extends DurableObject {
     ws.serializeAttachment({ player, joined: true });
     ws.send(JSON.stringify({ t: "seat", player, game, token: issued, peer: this.joined(3 - player, ws) }));
     this.tell(3 - player, { t: "peer", on: true });
-    this.views[player - 1] = { sent: null, seq: 0, acked: 0, frameSeq: -1 };
+    this.views[player - 1] = { encoder: new FrameEncoder(), seq: 0, acked: 0, frameSeq: -1 };
     console.log(JSON.stringify({ msg: "join", player, game, claimed: issued !== null }));
 
     if (!this.machines) {
@@ -152,12 +149,9 @@ export class Match extends DurableObject {
     if (!view || m.frameSeq === view.frameSeq) return;
     if (((view.seq - view.acked) & 0xffff) >= MAX_UNACKED) return;   // phone is behind
     view.frameSeq = m.frameSeq;
-    const cur = m.packInto(this.packed);
-    const msg = delta(view.sent, cur, (view.seq + 1) & 0xffff);
+    const msg = view.encoder.encode(m.shadesInto(this.shades), (view.seq + 1) & 0xffff);
     if (!msg) return;
     view.seq = (view.seq + 1) & 0xffff;
-    view.sent ??= new Uint8Array(PACKED_BYTES);
-    view.sent.set(cur);
     for (const ws of this.ctx.getWebSockets(`p${player}`)) {
       if (!ws.deserializeAttachment()?.joined) continue;
       try { ws.send(msg); } catch { /* closing */ }
@@ -195,33 +189,6 @@ export class Match extends DurableObject {
     b.tokens -= 1;
     return true;
   }
-}
-
-// Frame message with the rows of `cur` that differ from `prev` (all rows if no `prev`);
-// null when nothing changed.
-function delta(prev, cur, seq) {
-  const mask = new Uint8Array(MASK_BYTES);
-  let changed = 0;
-  for (let r = 0; r < ROWS; r++) {
-    const o = r * PACKED_ROW;
-    let same = prev !== null;
-    for (let i = 0; same && i < PACKED_ROW; i++) same = prev[o + i] === cur[o + i];
-    if (!same) { mask[r >> 3] |= 1 << (r & 7); changed++; }
-  }
-  if (!changed) return null;
-  const msg = new Uint8Array(3 + MASK_BYTES + changed * PACKED_ROW);
-  msg[0] = MSG_FRAME;
-  msg[1] = seq & 0xff;
-  msg[2] = seq >> 8;
-  msg.set(mask, 3);
-  let p = 3 + MASK_BYTES;
-  for (let r = 0; r < ROWS; r++) {
-    if (mask[r >> 3] & (1 << (r & 7))) {
-      msg.set(cur.subarray(r * PACKED_ROW, (r + 1) * PACKED_ROW), p);
-      p += PACKED_ROW;
-    }
-  }
-  return msg;
 }
 
 function randomHex(bytes) {

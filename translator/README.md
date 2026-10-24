@@ -46,9 +46,11 @@ Open `http://192.168.64.10:8787/` on a phone, pick a game, start a match, and sh
 player 2 link. Each phone is one Game Boy: its screen and its buttons.
 
 Both Game Boys run inside the match's Durable Object (`src/match.js`), linked by cable, at
-59.73 Hz. Phones send one byte when their buttons change and receive frames as 2-bit
-pixels, only the rows that changed, which they acknowledge so a slow phone skips frames
-instead of queueing them. Cheating is designed out: the game's code and memory never leave
+59.73 Hz. Phones send one byte when their buttons change and receive screen updates in
+the spirit of VNC's RFB protocol (`src/gb/frames.js`): a scroll is one move command, then
+only the 8x8 tiles that still differ, each sent as solid, two-shade or raw. A still screen
+costs nothing; a one-pixel change costs about 70 bytes. Phones acknowledge updates, so a
+slow phone skips frames instead of queueing them. Cheating is designed out: the game's code and memory never leave
 the server, each phone can only press its own seat's buttons (rate limited, impossible
 d-pad combinations removed), and a seat belongs to the first phone that joins it.
 

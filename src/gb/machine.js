@@ -8,8 +8,6 @@
 export const FRAME_CYCLES = 70224;                 // 154 lines x 456 dots
 export const FRAME_HZ = 4194304 / FRAME_CYCLES;    // 59.7275
 export const FB_BYTES = 160 * 144 * 4;
-export const PACKED_ROW = 40;                      // 160 pixels x 2 bits
-export const PACKED_BYTES = 144 * PACKED_ROW;
 
 // Control block offsets in the game's memory (Phase 1, section 3).
 const FRAME_SEQ = 0x10000;
@@ -95,14 +93,11 @@ export class GameBoy {
     return this.u8.subarray(FB + Atomics.load(this.i32, FRONT >> 2) * FB_BYTES).subarray(0, FB_BYTES);
   }
 
-  // The last finished frame as 2-bit shade indices, 4 pixels per byte, leftmost in the
-  // high bits: what goes over the network (5,760 bytes instead of 92,160).
-  packInto(out) {
+  // The last finished frame as shade indices 0-3, one byte per pixel (what the screen
+  // updates in frames.js are computed from).
+  shadesInto(out) {
     const px = this.pixels;
-    for (let i = 0, o = 0; o < PACKED_BYTES; o++, i += 16) {
-      out[o] = (SHADE_OF_RED[px[i]] << 6) | (SHADE_OF_RED[px[i + 4]] << 4)
-             | (SHADE_OF_RED[px[i + 8]] << 2) | SHADE_OF_RED[px[i + 12]];
-    }
+    for (let i = 0, o = 0; o < 160 * 144; o++, i += 4) out[o] = SHADE_OF_RED[px[i]];
     return out;
   }
 }

@@ -1,10 +1,11 @@
 // One player's phone: the screen of their Game Boy and its buttons. The game runs on
-// the server; this page sends button bytes and draws the pixel rows it receives.
+// the server; this page sends button bytes and draws the screen updates it receives.
+import { FrameDecoder } from "/frames.js";
+
 const BUTTONS = { right: 1, left: 2, up: 4, down: 8, a: 16, b: 32, select: 64, start: 128 };
 const KEYS = { ArrowRight: "right", ArrowLeft: "left", ArrowUp: "up", ArrowDown: "down",
                KeyX: "a", KeyZ: "b", ShiftRight: "select", Enter: "start" };
 const SHADES = [[0xe0, 0xf8, 0xd0], [0x88, 0xc0, 0x70], [0x34, 0x68, 0x56], [0x08, 0x18, 0x20]];
-const ROW = 40, ROWS = 144, MASK = 18;
 
 const params = new URLSearchParams(location.search);
 const match = params.get("match") ?? "";
@@ -20,28 +21,19 @@ if (!/^[a-z0-9]{6,16}$/.test(match) || (player !== "1" && player !== "2") ||
 }
 document.getElementById("who").textContent = `Player ${player}`;
 
-// ---- screen
+// ---- screen: what changed arrives as RFB-style updates (moves and 8 x 8 tiles)
 const ctx = document.getElementById("screen").getContext("2d");
 const image = ctx.createImageData(160, 144);
-for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
+const decoder = new FrameDecoder();
+const RGBA = new Uint32Array(SHADES.map(([r, g, b]) => (255 << 24 | b << 16 | g << 8 | r) >>> 0));
+const pixels32 = new Uint32Array(image.data.buffer);
 
-function drawFrame(buf) {
-  const mask = buf.subarray(3, 3 + MASK);
-  const px = image.data;
-  let p = 3 + MASK;
-  for (let r = 0; r < ROWS; r++) {
-    if (!(mask[r >> 3] & (1 << (r & 7)))) continue;
-    let o = r * 640;
-    for (let i = 0; i < ROW; i++) {
-      const byte = buf[p++];
-      for (let shift = 6; shift >= 0; shift -= 2) {
-        const c = SHADES[(byte >> shift) & 3];
-        px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2];
-        o += 4;
-      }
-    }
-  }
+function drawUpdate(buf) {
+  if (!decoder.apply(buf)) return false;
+  const px = decoder.px;
+  for (let i = 0; i < px.length; i++) pixels32[i] = RGBA[px[i]];
   ctx.putImageData(image, 0, 0);
+  return true;
 }
 
 // ---- buttons: each finger (pointer) holds at most one button; sliding moves it
@@ -127,15 +119,14 @@ function connect() {
     ws.addEventListener("message", (e) => {
       if (typeof e.data !== "string") {
         const buf = new Uint8Array(e.data);
-        if (buf[0] !== 1) return;
-        drawFrame(buf);
-        ws.send(buf.subarray(1, 3));                  // ack: frame seq
+        if (drawUpdate(buf)) ws.send(buf.subarray(1, 3));   // ack: update seq
         return;
       }
       if (e.data === "pong") return;
       const msg = JSON.parse(e.data);
       if (msg.t === "seat") {
         if (msg.token) saveToken(msg.token);
+        decoder.px.fill(0);                           // the server starts again from blank
         joined = true;
         retry = 0;
         sent = -1;
