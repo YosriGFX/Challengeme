@@ -1,6 +1,8 @@
 """Code discovery idioms found in real games (first met in Dr. Mario): jump tables placed
 right after a call, tables of code addresses picked by an index, interrupt handlers that
-run on past their 8 bytes, and the OAM DMA routine copied to HRAM. Each test builds a
+run on past their 8 bytes, the OAM DMA routine copied to HRAM, and (first met in GBDK
+games) interrupt handlers registered as pointers in RAM, with unused space filled with
+0xFF. Each test builds a
 small ROM with the idiom, checks what discovery finds and, where it matters, that the
 translated code takes the right branch when it runs.
 """
@@ -70,6 +72,28 @@ DMA = rom_with({
 })
 
 
+def gbdk_rom():
+    """GBDK's layout: unused bytes are 0xFF (RST $38 as code), `rst $20` is JP (HL), and
+    the VBlank handler is registered with add_VBL(handler): its address is only an
+    LD DE,nn before a call, stored in RAM and called from the interrupt."""
+    rom = bytearray(b"\xFF" * 0x8000)
+    rom[0x100:0x150] = DMA[0x100:0x150]
+    rom[0x147:0x14A] = b"\x00\x00\x00"
+    for addr, code in {
+        0x0020: h("E9"),                                        # jp hl
+        0x0040: h("F5 E5 C5 D5 C38000"),                        # push all; jp $0080
+        0x0080: h("FA10C0 6F FA11C0 67 E7 D1 C1 E1 F1 D9"),     # hl = handler; rst $20; pop all; reti
+        0x009C: h("2100C0 34 C9"),                              # the handler: inc ($C000); ret
+        0x0150: h("31FEFF 119C00 CD0002 3E01 E0FF FB 76 00 18FC"),  # add_VBL($009C); IE = VBlank; ei; halt loop
+        0x0200: h("7B EA10C0 7A EA11C0 C9"),                    # add_VBL: ($C010) = de
+    }.items():
+        rom[addr:addr + len(code)] = code
+    return bytes(rom)
+
+
+GBDK = gbdk_rom()
+
+
 class Discovery(unittest.TestCase):
     def test_inline_table_after_rst(self):
         prog = discover(RST_TABLE)
@@ -99,6 +123,16 @@ class Discovery(unittest.TestCase):
         self.assertNotIn(0x60, prog.instrs)
         self.assertEqual(prog.instrs[0x5F].length, 3)
 
+    def test_handler_pointer_passed_to_a_call(self):
+        prog = discover(GBDK)
+        self.assertIn(0x9C, prog.hard)
+
+    def test_ff_padding_is_not_code(self):
+        prog = discover(GBDK)
+        self.assertIn(0x60, prog.unresolved)             # unused joypad vector
+        self.assertFalse([k for k in prog.instrs if 0x300 <= k < 0x8000])
+        self.assertLess(len(prog.instrs), 40)
+
     def test_dma_routine_mapped_into_hram(self):
         prog = discover(DMA)
         self.assertIn(0xFF80, prog.instrs)
@@ -127,6 +161,11 @@ class Dispatch(unittest.TestCase):
 
     def test_push_ret_table_takes_entry_a(self):
         self.assertEqual(self.entry_taken(PUSH_RET, "pushret"), 0x22)
+
+    def test_handler_registered_in_ram_runs(self):
+        res = run(translate(GBDK, "gbdk", self._tmp.name), 10, "C000:1")
+        self.assertIsNone(res["trap"])
+        self.assertGreaterEqual(res["dump"]["C000"][0], 8)   # once per frame
 
 
 if __name__ == "__main__":

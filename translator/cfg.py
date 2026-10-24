@@ -207,6 +207,42 @@ def discover(rom, ram_code=(), entries=()):
             addr = i.next
         return False
 
+    def looks_like_code(bank, addr):
+        """A guess that `addr` starts a routine: straight-line code that decodes cleanly
+        and reaches a return or jump soon, without the runs of NOP or RST $38 that data
+        and padding decode to."""
+        v, nops = view(bank), 0
+        for _ in range(48):
+            k = key(bank, addr)
+            if not valid(k) or is_padding(k):
+                return False
+            try:
+                i = decode(v, addr)
+            except DecodeError:
+                return False
+            nops += i.kind == "nop"
+            if nops > 3:
+                return False
+            if i.kind in ("ret", "reti", "jp_hl") or i.flow == "jump":
+                return True
+            addr = i.next
+        return False
+
+    def bank_for(bank, addr):
+        return (bank if bank is not None else default_bank) if in_window(addr) else None
+
+    def key_or_none(bank, addr):
+        if not in_window(addr):
+            return addr
+        b = bank_for(bank, addr)
+        return None if b is None else key(b, addr)
+
+    def is_padding(k):
+        """An unused 0xFF byte: as code it is RST $38, which recurses forever when $38 is
+        0xFF too. No game runs that, so it is padding, not a routine."""
+        b = rom[bank_of(k) * 0x4000 + (k & 0x3FFF)] if k >= 0x10000 else image[k]
+        return b == 0xFF and len(rom) > 0x38 and rom[0x38] == 0xFF
+
     def inline_table(bank, at):
         """Code addresses listed as 16-bit words from `at`. The table ends at the first word
         that cannot be a code address, or where an entry says code starts."""
@@ -295,7 +331,7 @@ def discover(rom, ram_code=(), entries=()):
             continue
         if not valid(k) and 0xFF80 <= k < 0xFFFF and map_dma_routine(k):
             pass
-        if not valid(k):
+        if not valid(k) or is_padding(k):
             unresolved.add(k)
             continue
         bank, a = bank_of(k), addr_of(k)
@@ -355,6 +391,13 @@ def discover(rom, ram_code=(), entries=()):
                 soft.add(tk)
         if ins.kind == "call":
             follow(ins.target, as_entry=True)
+            # LD rr,nn right before a call: nn may be a routine handed over to be called
+            # later, as GBDK's add_VBL(handler) does. Taken only if it looks like code.
+            for prev in chain_before(k, 3):
+                nn = prev.args[1] if prev.kind == "ld_rp_d16" else None
+                if nn is not None and 0x0040 <= nn < 0x8000 and key_or_none(bank, nn) not in owner \
+                        and key_or_none(bank, nn) is not None and looks_like_code(bank_for(bank, nn), nn):
+                    follow(nn, as_entry=True, to=deferred, guess=True)
             if consumes_return(bank, ins.target) and not (in_window(ins.target) and bank is None):
                 for t in inline_table(bank, ins.next):
                     follow(t, as_entry=True, to=deferred, guess=True)
