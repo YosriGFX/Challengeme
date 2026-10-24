@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#101418">
+  <title>Challenge Me</title>
+  <link rel="icon" href="/favicon.svg">
+  <style>
+    :root { color-scheme: dark; --bg: #101418; --panel: #1b2128; --key: #2a323b; --down: #6cd38a; --text: #e8eef2; --muted: #93a1ad; --warn: #e07a6a; }
+    * { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+                 font: 16px/1.3 system-ui, sans-serif; touch-action: none; }
+    body { display: grid; grid-template-rows: auto auto auto 1fr auto; grid-template-columns: minmax(0, 1fr);
+           gap: 10px; max-width: 480px; margin: 0 auto; padding: 10px 16px max(16px, env(safe-area-inset-bottom)); }
+    header { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 14px; }
+    #conn.on { color: var(--down); } #conn.bad { color: var(--warn); }
+    canvas { display: block; width: 100%; aspect-ratio: 160 / 144; image-rendering: pixelated; background: #000; border-radius: 6px; }
+    #invite { display: none; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+    #invite.show { display: flex; }
+    #invite span { flex: 1; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+    #invite button { flex: none; height: 32px; padding: 0 12px; border-radius: 16px; font-size: 13px; }
+    .pad { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .dpad { --k: min(64px, 16vw); display: grid; grid-template: repeat(3, var(--k)) / repeat(3, var(--k)); }
+    .ab { --k: min(72px, 18vw); display: grid; grid-template: var(--k) var(--k) / var(--k) var(--k); gap: 6px; transform: rotate(-20deg); }
+    button { border: 0; border-radius: 14px; background: var(--key); color: var(--text); font: inherit; font-weight: 700; }
+    button.down { background: var(--down); color: var(--bg); }
+    .ab button { border-radius: 50%; }
+    [data-key=up] { grid-area: 1 / 2; } [data-key=left] { grid-area: 2 / 1; }
+    [data-key=right] { grid-area: 2 / 3; } [data-key=down] { grid-area: 3 / 2; }
+    [data-key=a] { grid-area: 1 / 2; } [data-key=b] { grid-area: 2 / 1; }
+    .menu { display: flex; justify-content: center; gap: 24px; }
+    .menu button { width: 104px; height: 36px; border-radius: 18px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header><span id="who">Player</span><span id="peer"></span><span id="conn">connecting…</span></header>
+  <canvas id="screen" width="160" height="144"></canvas>
+  <div id="invite"><span id="invite-link"></span><button id="share" type="button">Share</button></div>
+  <div class="pad">
+    <div class="dpad">
+      <button data-key="up">▲</button><button data-key="left">◀</button>
+      <button data-key="right">▶</button><button data-key="down">▼</button>
+    </div>
+    <div class="ab"><button data-key="b">B</button><button data-key="a">A</button></div>
+  </div>
+  <div class="menu"><button data-key="select">SELECT</button><button data-key="start">START</button></div>
+  <script type="module" src="/play.js"></script>
+</body>
+</html>

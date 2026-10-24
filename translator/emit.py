@@ -512,7 +512,20 @@ def wat_string(data):
                    for b in data)
 
 
-def emit_module(prog, rom):
+# The browser build imports a shared memory (SharedArrayBuffer, one per Game Boy). The
+# server build, run inside a Cloudflare Durable Object, owns a plain exported memory:
+# Workers have no shared memory, and nothing else touches it while a frame runs.
+SERVER_EDITS = (
+    ('(import "env" "mem" (memory __PAGES__ __PAGES__ shared))', '(memory (export "mem") __PAGES__ __PAGES__)'),
+    ("(drop (i32.atomic.rmw.add (i32.const 0x10000) (i32.const 1)))",
+     "(i32.store (i32.const 0x10000) (i32.add (i32.load (i32.const 0x10000)) (i32.const 1)))"),
+    ("i32.atomic.load", "i32.load"),
+    ("i32.atomic.store", "i32.store"),
+)
+TARGETS = ("server", "browser")
+
+
+def emit_module(prog, rom, target="server"):
     funcs, stats = [], {"functions": 0, "blocks": 0, "instructions": 0, "dead_flags": 0}
     for fn in prog.functions:
         fe = FunctionEmitter(prog, fn)
@@ -523,6 +536,10 @@ def emit_module(prog, rom):
         stats["instructions"] += sum(len(b.instrs) for b in fn.blocks)
     pages = max(8, -(-(HOST_ROM + len(rom)) // 0x10000))
     runtime = RUNTIME.read_text()
+    if target == "server":
+        for old, new in SERVER_EDITS:
+            assert old in runtime, old
+            runtime = runtime.replace(old, new)
     runtime = runtime.replace("__PAGES__", str(pages)).replace("__ROM_LEN__", str(len(rom)))
     runtime = runtime.replace("__BANK_LEN__", str(min(len(rom), 0x8000)))
     cart = prog.cart

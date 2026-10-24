@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .cfg import TranslateError, discover, fmt_key, parse_key
 from .decoder import DecodeError
-from .emit import emit_module
+from .emit import TARGETS, emit_module
 
 
 def load_hints(path):
@@ -33,6 +33,9 @@ def main(argv=None):
     ap.add_argument("-o", "--out", type=Path, help="output .wat (default: <rom>.wat)")
     ap.add_argument("--hints", type=Path,
                     help="JSON hints: extra entries (JP (HL) targets) and routines copied to RAM")
+    ap.add_argument("--target", choices=TARGETS, default="server",
+                    help="server: runs in the Match Durable Object (default); "
+                         "browser: shared memory for a Web Worker")
     ap.add_argument("--wasm", action="store_true", help="also assemble .wasm with wat2wasm")
     ap.add_argument("--wat2wasm", default="wat2wasm", help="path to wabt's wat2wasm")
     args = ap.parse_args(argv)
@@ -41,7 +44,7 @@ def main(argv=None):
     try:
         ram_code, entries = load_hints(args.hints)
         prog = discover(rom, ram_code, entries)
-        wat, stats = emit_module(prog, rom)
+        wat, stats = emit_module(prog, rom, args.target)
     except (DecodeError, TranslateError) as err:
         print(f"error: {err}", file=sys.stderr)
         return 1

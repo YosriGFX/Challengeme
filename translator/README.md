@@ -23,7 +23,7 @@ python -m unittest discover -s translator/tests -t .
 
 ## Hints
 
-A jump to an address with no translated code traps; the page shows the address (with its
+A jump to an address with no translated code traps; the phone shows the address (with its
 ROM bank for 0x4000-0x7FFF, as `BB:AAAA`). Add it to a hints file and rebuild:
 
 ```json
@@ -34,26 +34,27 @@ ROM bank for 0x4000-0x7FFF, as `BB:AAAA`). Add it to a hints file and rebuild:
 Banked code is found on its own when bank 0 switches banks with a constant
 (`ld a,n` then `ld ($2000),a`) before jumping; a bank chosen at runtime needs a hint.
 
-## Running in the browser
+## Playing (server-rendered, two phones)
 
 ```sh
-python -m translator roms/linkdemo.gb -o build/linkdemo.wat --wasm
-cp build/linkdemo.wasm public/games/
-npx wrangler dev          # listens on https://192.168.64.10:8787 (see "dev" in wrangler.jsonc)
+python -m translator roms/linkdemo.gb -o build/linkdemo.wat --wasm   # server build (default)
+cp build/linkdemo.wasm src/games/                                      # and list it in src/games/index.js
+npx wrangler dev          # listens on http://192.168.64.10:8787 (see "dev" in wrangler.jsonc)
 ```
 
-Open `https://192.168.64.10:8787/?game=linkdemo` on the host screen and accept the
-self-signed certificate warning once. Each player opens the controller link under their
-screen on a phone on the same network (and accepts the warning once on that phone too).
-HTTPS is required: the host page uses shared WebAssembly memory, which browsers allow only
-in a secure context, and plain http is secure only on `localhost`. To use another address,
-change `dev.ip` and add its origin to `APP_ORIGIN` in `wrangler.jsonc`.
+Open `http://192.168.64.10:8787/` on a phone, pick a game, start a match, and share the
+player 2 link. Each phone is one Game Boy: its screen and its buttons.
 
-The host page runs two Game Boys in a Web Worker, linked by cable, and shows both. Buttons
-travel phone -> `Match` Durable Object -> host page -> the Game Boy's shared memory. The
-keyboard works too. Set `APP_ORIGIN` to the deployed origin before deploying.
+Both Game Boys run inside the match's Durable Object (`src/match.js`), linked by cable, at
+59.73 Hz. Phones send one byte when their buttons change and receive frames as 2-bit
+pixels, only the rows that changed, which they acknowledge so a slow phone skips frames
+instead of queueing them. Cheating is designed out: the game's code and memory never leave
+the server, each phone can only press its own seat's buttons (rate limited, impossible
+d-pad combinations removed), and a seat belongs to the first phone that joins it.
+
+`--target browser` still builds the shared-memory variant for running in a Web Worker.
 
 ## Not yet supported
 
-Sound, MBC3's real-time clock, battery saves, CGB features, and the second multiplayer
-mode (each phone running its own Game Boy, link cable over the network).
+Sound, MBC3's real-time clock, battery saves, CGB features, and keeping a match's game
+state when its Durable Object is evicted (the game restarts).

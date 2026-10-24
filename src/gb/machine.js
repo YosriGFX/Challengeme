@@ -1,14 +1,17 @@
 // One translated Game Boy instance, and the link cable between two of them.
-// Shared by the browser worker and the dev test harness. Plain ES module, no imports.
+// Used by the Match Durable Object (server build of a game) and by the dev test harness
+// (either build). Plain ES module, no imports.
 //
 // The game's code is native WebAssembly produced ahead of time by the translator; this
-// file only creates the shared memory, calls run_frame, and moves link-cable bytes.
+// file only calls run_frame, moves link-cable bytes and packs finished frames.
 
 export const FRAME_CYCLES = 70224;                 // 154 lines x 456 dots
 export const FRAME_HZ = 4194304 / FRAME_CYCLES;    // 59.7275
 export const FB_BYTES = 160 * 144 * 4;
+export const PACKED_ROW = 40;                      // 160 pixels x 2 bits
+export const PACKED_BYTES = 144 * PACKED_ROW;
 
-// Control block offsets in the shared memory (Phase 1, section 3).
+// Control block offsets in the game's memory (Phase 1, section 3).
 const FRAME_SEQ = 0x10000;
 const FRONT = 0x10004;
 const JOYPAD = 0x10008;
@@ -22,8 +25,12 @@ const FB = 0x20000;
 // Joypad bits, 1 = pressed.
 export const BUTTONS = { right: 1, left: 2, up: 4, down: 8, a: 16, b: 32, select: 64, start: 128 };
 
-// Reads the page count of the shared memory the module imports, so it can be created
-// with exactly the declared size (an imported shared memory must match it).
+// Shade index of each DMG colour the runtime writes, keyed by its red byte.
+const SHADE_OF_RED = new Uint8Array(256);
+SHADE_OF_RED[0xe0] = 0; SHADE_OF_RED[0x88] = 1; SHADE_OF_RED[0x34] = 2; SHADE_OF_RED[0x08] = 3;
+
+// Page count of the shared memory a browser-build module imports (0 for a server build,
+// which owns its memory). An imported shared memory must be created with exactly this size.
 export function memoryPages(bytes) {
   const b = new Uint8Array(bytes);
   let p = 8;
@@ -48,28 +55,19 @@ export function memoryPages(bytes) {
     }
     p = end;
   }
-  throw new Error("the module imports no memory");
-}
-
-// Views on a machine's shared buffer, usable from any thread that holds it.
-export function frontPixels(buffer) {
-  const front = Atomics.load(new Int32Array(buffer, FRONT, 1), 0);
-  return new Uint8Array(buffer, FB + front * FB_BYTES, FB_BYTES);
-}
-
-export function frameSeq(buffer) {
-  return Atomics.load(new Int32Array(buffer, FRAME_SEQ, 1), 0);
-}
-
-export function setButtons(buffer, bits) {
-  Atomics.store(new Int32Array(buffer, JOYPAD, 1), 0, bits & 0xff);
+  return 0;
 }
 
 export class GameBoy {
-  constructor(module, pages) {
-    this.memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
-    this.x = new WebAssembly.Instance(module, { env: { mem: this.memory } }).exports;
-    this.buffer = this.memory.buffer;
+  constructor(module, pages = 0) {
+    if (pages) {
+      const mem = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
+      this.x = new WebAssembly.Instance(module, { env: { mem } }).exports;
+      this.buffer = mem.buffer;
+    } else {
+      this.x = new WebAssembly.Instance(module, {}).exports;
+      this.buffer = this.x.mem.buffer;
+    }
     this.u8 = new Uint8Array(this.buffer);
     this.i32 = new Int32Array(this.buffer);
     this.trap = null;
@@ -84,15 +82,29 @@ export class GameBoy {
       this.x.run_frame(cycles);
     } catch (e) {
       const pc = this.x.PC.value, bank = Atomics.load(this.i32, TRAP_BANK >> 2);
-      const at = pc >= 0x4000 && pc < 0x8000
-        ? `${hex(bank, 2)}:${hex(pc, 4)}` : hex(pc, 4);
+      const at = pc >= 0x4000 && pc < 0x8000 ? `${hex(bank, 2)}:${hex(pc, 4)}` : hex(pc, 4);
       this.trap = { message: e.message, pc, bank, at };
     }
   }
 
-  set buttons(bits) { setButtons(this.buffer, bits); }
-  get frameSeq() { return frameSeq(this.buffer); }
-  get pixels() { return frontPixels(this.buffer); }
+  set buttons(bits) { Atomics.store(this.i32, JOYPAD >> 2, bits & 0xff); }
+  get frameSeq() { return Atomics.load(this.i32, FRAME_SEQ >> 2); }
+
+  // The last finished frame, RGBA.
+  get pixels() {
+    return this.u8.subarray(FB + Atomics.load(this.i32, FRONT >> 2) * FB_BYTES).subarray(0, FB_BYTES);
+  }
+
+  // The last finished frame as 2-bit shade indices, 4 pixels per byte, leftmost in the
+  // high bits: what goes over the network (5,760 bytes instead of 92,160).
+  packInto(out) {
+    const px = this.pixels;
+    for (let i = 0, o = 0; o < PACKED_BYTES; o++, i += 16) {
+      out[o] = (SHADE_OF_RED[px[i]] << 6) | (SHADE_OF_RED[px[i + 4]] << 4)
+             | (SHADE_OF_RED[px[i + 8]] << 2) | SHADE_OF_RED[px[i + 12]];
+    }
+    return out;
+  }
 }
 
 // A master `m` started a transfer (FF02 = 0x81). If the other side `s` is waiting on

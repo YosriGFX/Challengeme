@@ -1,0 +1,9 @@
+// Every SQL statement of the Match Durable Object.
+export const SQL = Object.freeze({
+  createSeats: "CREATE TABLE IF NOT EXISTS seats (player INTEGER PRIMARY KEY, token_hash TEXT NOT NULL) STRICT",
+  createMeta: "CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL) STRICT",
+  seatHash: "SELECT token_hash FROM seats WHERE player = ?",
+  claimSeat: "INSERT INTO seats (player, token_hash) VALUES (?, ?)",
+  getGame: "SELECT v FROM meta WHERE k = 'game'",
+  setGame: "INSERT OR IGNORE INTO meta (k, v) VALUES ('game', ?)",
+});

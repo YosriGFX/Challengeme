@@ -12,6 +12,7 @@ from pathlib import Path
 
 from tools import make_link_demo_rom
 from tools.make_hello_rom import GLYPHS, MESSAGE, MSG_COL, MSG_ROW
+from translator.__main__ import main
 from translator.tests.romkit import TOOLS, build_rom, frame_from_shades, h, run, translate, write_png
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -141,6 +142,23 @@ class HardwareTest(unittest.TestCase):
     def test_draws_hello_world(self):
         res = run(self.wasm((ROOT / "roms" / "hello.gb").read_bytes(), "hello"), 3, "--fb")
         self.check_frame(res, frame_from_shades(hello_expected), "hello")
+
+    def test_packed_frame_for_the_network(self):
+        res = run(self.wasm(DRAW, "draw"), 3, "--packed")
+        got = bytes.fromhex(res["packed"])
+        want = bytes(
+            (draw_expected(x, y) << 6) | (draw_expected(x + 1, y) << 4) | (draw_expected(x + 2, y) << 2)
+            | draw_expected(x + 3, y) for y in range(144) for x in range(0, 160, 4))
+        self.assertEqual(got, want)
+
+    def test_browser_build_still_runs(self):
+        rom = (ROOT / "roms" / "hello.gb").read_bytes()
+        path = Path(self.tmp) / "hello.gb"
+        path.write_bytes(rom)
+        wat = path.with_suffix(".wat")
+        self.assertEqual(main([str(path), "-o", str(wat), "--wasm", "--target", "browser"]), 0)
+        res = run(wat.with_suffix(".wasm"), 3, "--fb")
+        self.check_frame(res, frame_from_shades(hello_expected), "hello-browser")
 
     def test_draws_background_window_and_sprites(self):
         res = run(self.wasm(DRAW, "draw"), 3, "--fb")

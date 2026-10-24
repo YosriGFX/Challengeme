@@ -1,8 +1,9 @@
-// Worker: serves nothing but the match WebSocket. Pages, scripts and the translated
-// games (.wasm) are static assets from ./public and never reach this code.
+// Worker: serves nothing but the match WebSocket. Pages and scripts are static assets
+// from ./public. The games themselves run in the Match Durable Object (src/match.js).
 export { Match } from "./match.js";
 
 const MATCH_ID = /^[a-z0-9]{6,16}$/;
+const GAME_ID = /^[a-z0-9_-]{1,32}$/;
 
 const json = (data, status) =>
   Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
@@ -10,7 +11,7 @@ const json = (data, status) =>
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const [, scope, resource, id] = url.pathname.split("/");        // /ws/match/<id>
+    const [, scope, resource, id] = url.pathname.split("/");        // /ws/match/<id>?player=1|2[&game=<name>]
     try {
       switch (`${request.method} ${scope} ${resource}`) {
         case "GET ws match": {
@@ -20,14 +21,13 @@ export default {
             console.log(JSON.stringify({ msg: "bad_origin", origin: request.headers.get("Origin") }));
             return json({ error: "bad_origin" }, 403);
           }
-          const role = url.searchParams.get("role");
           const player = url.searchParams.get("player");
-          let seat;
-          if (role === "host") seat = "host";
-          else if (role === "pad" && (player === "1" || player === "2")) seat = `pad:${player}`;
-          else return json({ error: "bad_role" }, 400);
+          if (player !== "1" && player !== "2") return json({ error: "bad_player" }, 400);
+          const game = url.searchParams.get("game") ?? "";
+          if (game !== "" && !GAME_ID.test(game)) return json({ error: "bad_game" }, 400);
           const req = new Request(request, { headers: new Headers(request.headers) });
-          req.headers.set("X-Seat", seat);
+          req.headers.set("X-Player", player);
+          req.headers.set("X-Game", game);
           return env.MATCH.getByName(id).fetch(req);
         }
       }
