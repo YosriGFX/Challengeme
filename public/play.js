@@ -265,6 +265,8 @@ document.addEventListener("pointermove", (e) => { if (held.has(e.pointerId)) pre
 document.addEventListener("pointerup", release);
 document.addEventListener("pointercancel", release);
 document.addEventListener("contextmenu", (e) => e.preventDefault());
+// Safari ignores user-scalable=no: stop its pinch and double-tap zoom here too.
+for (const type of ["gesturestart", "gesturechange", "dblclick"]) document.addEventListener(type, (e) => e.preventDefault());
 // ---- sound: starts on the first tap or key press (browsers allow no sooner)
 const sound = new Sound();
 const soundButton = document.getElementById("sound");
