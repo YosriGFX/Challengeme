@@ -37,7 +37,7 @@ const BUILT_IN = [
   { id: "rcproam", title: "Super R.C. Pro-Am (2 players)", module: rcproam,
     // Start on the title: both cars on the grid, just before the countdown
     start: { frames: 900, inputs: [[800, 0x80, 0], [806, 0, 0]] } },
-  { id: "f1pole", title: "F-1 Pole Position (2-4 players)", module: f1pole, players: 4, minPlayers: 2, link: "adapter" },
+  { id: "f1pole", title: "F-1 Pole Position (1 player each)", module: f1pole },   // 4 players on the adapter: on hold
   { id: "linkdemo", title: "Link demo (2 players)", module: linkdemo },
   { id: "hello", title: "Hello World", module: hello },
 ];
