@@ -201,7 +201,9 @@ function showResult({ winner, wins, best, over, forfeit }) {
     return;
   }
   const won = winner === Number(player);
-  const score = `${wins[me] ?? 0} – ${wins[1 - me] ?? 0}`;
+  const score = wins.length > 2
+    ? wins.map((w, i) => (i === me ? `you ${w}` : `P${i + 1} ${w}`)).join(" · ")
+    : `${wins[me] ?? 0} – ${wins[1 - me] ?? 0}`;
   result.className = `show ${won ? "win" : "lose"}${over ? " over" : ""}`;
   result.querySelector("strong").textContent = won ? "YOU WIN" : "YOU LOSE";
   result.querySelector("span").textContent = forfeit

@@ -1,7 +1,8 @@
 // Translated games, bundled into the Worker at deploy time (Workers cannot compile
 // WebAssembly from bytes). They never reach a browser: players only get pixels.
 //
-// coinduel, hello and linkdemo are our own homebrew ROMs (coinduel is rom_maker/template). The others are translated from the
+// coinduel, skyhop, hello and linkdemo are our own homebrew ROMs (rom_maker/template and
+// rom_maker/skyhop). The others are translated from the
 // owner's cartridge ROMs (only the .wasm is here, not the ROM). More games can be added on
 // one machine with `python -m tools.add_game <rom.gb> <id> "<title>"`, which writes them
 // to ./local/ and ./local.js; neither is committed. See TRANSLATOR.md.
@@ -12,11 +13,14 @@ import hello from "./hello.wasm";
 import linkdemo from "./linkdemo.wasm";
 import local from "./local.js";
 import rcproam from "./rcproam.wasm";
+import skyhop from "./skyhop.wasm";
 import tetris from "./tetris.wasm";
 
 // `result` (optional) lets the server decide rounds from the game's own memory. In
 // 2-player mode each Game Boy counts the rounds its player won at RAM address `wins`, and
-// the other player's at `theirs`; a round counts once both Game Boys agree. `best` is the
+// the other player's at `theirs`; a round counts once both Game Boys agree. Or, for any
+// number of players, every Game Boy keeps every player's round wins from `winsBy` on
+// (player 1 first); a round counts once all agree. `best` is the
 // number of round wins that ends the match. Phones never report results. A game that
 // reads its `best` from RAM gives the address as `bestAt` and the numbers players may
 // pick as `bestChoices`: whoever opens the match picks one, and the server writes it to
@@ -31,6 +35,10 @@ import tetris from "./tetris.wasm";
 // by a link cable, more by the 4-Player Adapter; `link: "adapter"` uses the adapter for
 // two as well (games written for it, like F-1 Pole Position).
 const BUILT_IN = [
+  { id: "skyhop", title: "Sky Hop (2-4 players)", module: skyhop, players: 4, minPlayers: 2, link: "adapter",
+    result: { winsBy: 0xc000, best: 3, bestAt: 0xc004, bestChoices: [1, 2, 3, 4, 5, 7, 9] },
+    // START on player 1 starts the game on the adapter
+    start: { frames: 30, inputs: [[10, 0x80, 0, 0, 0], [16, 0, 0, 0, 0]] } },
   { id: "tetris", title: "Tetris (2 players)", module: tetris, result: { wins: 0xffd7, theirs: 0xffd8, best: 4 },
     // 2PLAYER, then Start through game type, music A and the height screen
     start: { frames: 700, inputs: [[300, 0x01, 0], [306, 0, 0], [320, 0x80, 0], [326, 0, 0], [500, 0x80, 0],

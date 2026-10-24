@@ -55,7 +55,7 @@ export class Match extends DurableObject {
     this.machines = null;           // a GameBoy per seat, rebuilt after eviction
     this.link = null;               // what connects them: { run(cycles) }
     this.rule = null;               // how this game shows who won (GAMES[game].result)
-    this.wins = [0, 0];             // round wins last seen in each Game Boy's memory
+    this.wins = [0, 0];             // round wins per player last agreed by the Game Boys
     this.buttons = new Array(MAX_SEATS).fill(0);
     this.taps = new Array(MAX_SEATS).fill(0);   // buttons pressed since the last frame, even if let go
     this.views = new Array(MAX_SEATS).fill(null);   // per player: what that phone has been sent, per screen
@@ -262,9 +262,9 @@ export class Match extends DurableObject {
     this.buttons.fill(0);
     this.taps.fill(0);
     for (const m of this.machines) { m.buttons = 0; m.takeSound(); }
-    this.rule = this.n === 2 ? this.ruleFor(result) : null;
+    this.rule = this.n === 2 || result?.winsBy ? this.ruleFor(result) : null;
     if (this.rule?.bestAt) for (const m of machines) m.u8[this.rule.bestAt] = this.rule.best;
-    this.wins = [0, 0];
+    this.wins = this.seats().map(() => 0);
     this.overAt = 0;
     this.missed = null;
     this.budget.fill(PAUSE_BUDGET_MS);
@@ -367,14 +367,18 @@ export class Match extends DurableObject {
     this.send(player, encodeSound(writes, m.clock));
   }
 
-  // The game itself says who won: each Game Boy counts its player's round wins in RAM,
-  // and the other player's. The server reads both (phones never report results); once
-  // the two Game Boys agree on a new win, it tells both phones and keeps it in SQLite.
+  // The game itself says who won (phones never report results). Two ways, from
+  // GAMES[game].result:
+  // - wins/theirs (two players): each Game Boy counts its own player's round wins and the
+  //   other player's; a round counts once the two Game Boys agree.
+  // - winsBy (any number): every Game Boy keeps every player's round wins, player 1 at
+  //   winsBy, player 2 at winsBy + 1, ...; a round counts once all Game Boys agree.
+  // Each new win is told to every phone and kept in SQLite.
   checkResult() {
     if (!this.rule) return;
-    for (const player of [1, 2]) {
-      const wins = this.machines[player - 1].u8[this.rule.wins];
-      if (wins !== this.machines[2 - player].u8[this.rule.theirs]) continue;   // not agreed yet
+    for (const player of this.seats()) {
+      const wins = this.agreedWins(player);
+      if (wins === null) continue;                                    // not agreed yet
       const before = this.wins[player - 1];
       this.wins[player - 1] = wins;
       if (wins !== before + 1 || before >= this.rule.best) continue;   // unchanged, reset, or past the end
@@ -384,6 +388,17 @@ export class Match extends DurableObject {
       console.log(JSON.stringify({ msg: "result", winner: player, wins: this.wins, over }));
       for (const p of this.seats()) this.tell(p, { t: "result", winner: player, wins: this.wins, best: this.rule.best, over });
     }
+  }
+
+  // Player's round wins if every Game Boy agrees on them, else null.
+  agreedWins(player) {
+    const { winsBy, wins: at, theirs } = this.rule, ms = this.machines;
+    if (winsBy !== undefined) {
+      const wins = ms[0].u8[winsBy + player - 1];
+      return ms.every((m) => m.u8[winsBy + player - 1] === wins) ? wins : null;
+    }
+    const wins = ms[player - 1].u8[at];
+    return wins === ms[2 - player].u8[theirs] ? wins : null;
   }
 
   press(player, bits) {
