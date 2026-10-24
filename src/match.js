@@ -58,6 +58,7 @@ export class Match extends DurableObject {
     this.overAt = 0;                // when the match was decided
     this.budget = [PAUSE_BUDGET_MS, PAUSE_BUDGET_MS];
     this.pause = null;              // { player, since, timer } while one player is away
+    this.missed = null;             // a forfeit result its offline loser has not seen yet
     this.checkedAt = 0;
     this.timer = null;
     this.next = 0;
@@ -156,9 +157,9 @@ export class Match extends DurableObject {
     const winner = 3 - player, [wins1, wins2] = this.wins;
     this.sql.exec(SQL.addResult, winner, wins1, wins2, 1, Date.now(), "forfeit");
     console.log(JSON.stringify({ msg: "forfeit", player, winner }));
-    for (const p of [1, 2]) {
-      this.tell(p, { t: "result", winner, wins: this.wins, best: this.rule?.best ?? 0, over: true, forfeit: player });
-    }
+    const msg = { t: "result", winner, wins: this.wins, best: this.rule?.best ?? 0, over: true, forfeit: player };
+    for (const p of [1, 2]) this.tell(p, msg);
+    this.missed = { player, msg };                   // the loser is offline: tell them when back
     this.phase = "lobby";
     this.overAt = 0;
     this.announce();
@@ -197,6 +198,10 @@ export class Match extends DurableObject {
     if (this.phase === "paused" && this.pause.player === player) this.resume();
     else if (this.phase === "playing") this.start();
     this.announce();
+    if (this.missed?.player === player) {
+      ws.send(JSON.stringify(this.missed.msg));
+      this.missed = null;
+    }
     if (this.machines) this.sendFrame(player);       // where the game stands
   }
 
@@ -222,6 +227,7 @@ export class Match extends DurableObject {
     this.rule = result;
     this.wins = [0, 0];
     this.overAt = 0;
+    this.missed = null;
     this.budget = [PAUSE_BUDGET_MS, PAUSE_BUDGET_MS];
     for (const ws of this.ctx.getWebSockets()) {
       const seat = ws.deserializeAttachment();
