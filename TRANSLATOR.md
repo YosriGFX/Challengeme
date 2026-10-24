@@ -180,6 +180,28 @@ To check a two-player game without phones:
 node translator/tests/run_wasm.mjs --link build/game.wasm build/game.wasm 900 --buttons=80
 ```
 
+### Wins and losses
+
+The server can tell who won a round by reading the game's own memory, so phones never
+report results. Add a `result` to the game's line in `src/games/index.js`:
+
+```js
+{ id: "tetris", title: "Tetris (2 players)", module: tetris, result: { wins: 0xffd7, theirs: 0xffd8, best: 4 } },
+```
+
+- `wins`: the RAM address where each Game Boy counts the rounds its own player won.
+- `theirs`: where it counts the other player's round wins.
+- `best`: the number of round wins that ends the match.
+
+A round counts once both Game Boys agree (player 1's `wins` equals player 2's `theirs`).
+The server stores it in the match's `results` table, logs
+`{"msg":"result","winner":2,"wins":[0,1],"over":false}`, and sends both phones
+`{"t":"result",...}`, which shows the big YOU WIN / YOU LOSE in the page.
+
+To find the addresses for a new game, play two rounds with
+`run_wasm.mjs --link` and compare RAM dumps after each: look for a byte that goes 0, 1, 2
+on the winner's side and the same value at another address on the loser's side.
+
 ## 9. Not supported yet
 
 Sound, Game Boy Color, the MBC3 real-time clock, battery saves, and the 4-Player Adapter.

@@ -6,4 +6,7 @@ export const SQL = Object.freeze({
   claimSeat: "INSERT INTO seats (player, token_hash) VALUES (?, ?)",
   getGame: "SELECT v FROM meta WHERE k = 'game'",
   setGame: "INSERT OR IGNORE INTO meta (k, v) VALUES ('game', ?)",
+  createResults: "CREATE TABLE IF NOT EXISTS results (round INTEGER PRIMARY KEY, winner INTEGER NOT NULL, " +
+    "wins1 INTEGER NOT NULL, wins2 INTEGER NOT NULL, over INTEGER NOT NULL, at INTEGER NOT NULL) STRICT",
+  addResult: "INSERT INTO results (winner, wins1, wins2, over, at) VALUES (?, ?, ?, ?, ?)",
 });

@@ -19,7 +19,7 @@ const MAX_INPUTS_PER_SECOND = 120;  // a phone sends only on change; more is abu
 //
 // Phone -> here: text {"t":"join","token":...} once, then binary: 1 byte = buttons,
 // 2 bytes = ack of frame `seq` (little-endian).
-// Here -> phone: text {"t":"seat"|"peer"|"trap",...}; binary screen updates for both Game
+// Here -> phone: text {"t":"seat"|"peer"|"trap"|"result",...}; binary screen updates for both Game
 // Boys, each carrying only what changed since the last update of that screen the phone
 // was sent (format: gb/frames.js). Seeing the opponent's screen live keeps the other
 // player from being a black box; it is still only pixels.
@@ -30,7 +30,10 @@ export class Match extends DurableObject {
     this.sql = ctx.storage.sql;
     this.sql.exec(SQL.createSeats);
     this.sql.exec(SQL.createMeta);
+    this.sql.exec(SQL.createResults);
     this.machines = null;           // [GameBoy, GameBoy], rebuilt after eviction
+    this.rule = null;               // how this game shows who won (GAMES[game].result)
+    this.wins = [0, 0];             // round wins last seen in each Game Boy's memory
     this.buttons = [0, 0];
     this.views = [null, null];      // per player: what that phone has been sent, per screen
     this.shades = new Uint8Array(W * H);
@@ -112,6 +115,8 @@ export class Match extends DurableObject {
     if (!this.machines) {
       this.machines = [new GameBoy(GAMES[game].module), new GameBoy(GAMES[game].module)];
       this.machines.forEach((m, i) => { m.buttons = this.buttons[i]; });
+      this.rule = GAMES[game].result;
+      this.wins = [0, 0];
     }
     this.start();
   }
@@ -136,6 +141,7 @@ export class Match extends DurableObject {
       this.next += PERIOD;
     }
     if (this.next < now) this.next = now;           // fell behind: drop frames, don't spiral
+    this.checkResult();
     for (const player of [1, 2]) this.sendFrame(player);
     this.timer = setTimeout(() => this.tick(), Math.max(1, this.next - Date.now()));
   }
@@ -162,6 +168,24 @@ export class Match extends DurableObject {
         if (!ws.deserializeAttachment()?.joined) continue;
         try { ws.send(msg); } catch { /* closing */ }
       }
+    }
+  }
+
+  // The game itself says who won: each Game Boy counts its player's round wins in RAM,
+  // and the other player's. The server reads both (phones never report results); once
+  // the two Game Boys agree on a new win, it tells both phones and keeps it in SQLite.
+  checkResult() {
+    if (!this.rule) return;
+    for (const player of [1, 2]) {
+      const wins = this.machines[player - 1].u8[this.rule.wins];
+      if (wins !== this.machines[2 - player].u8[this.rule.theirs]) continue;   // not agreed yet
+      const before = this.wins[player - 1];
+      this.wins[player - 1] = wins;
+      if (wins !== before + 1 || before >= this.rule.best) continue;   // unchanged, reset, or past the end
+      const [wins1, wins2] = this.wins, over = wins >= this.rule.best;
+      this.sql.exec(SQL.addResult, player, wins1, wins2, over ? 1 : 0, Date.now());
+      console.log(JSON.stringify({ msg: "result", winner: player, wins: this.wins, over }));
+      for (const p of [1, 2]) this.tell(p, { t: "result", winner: player, wins: this.wins, best: this.rule.best, over });
     }
   }
 

@@ -3,10 +3,7 @@
 // games run on the server; this page sends button bytes and draws the updates it receives.
 import { FrameDecoder, screen } from "/frames.js";
 import { PALETTE } from "/palette.js";
-
-const BUTTONS = { right: 1, left: 2, up: 4, down: 8, a: 16, b: 32, select: 64, start: 128 };
-const KEYS = { ArrowRight: "right", ArrowLeft: "left", ArrowUp: "up", ArrowDown: "down",
-               KeyX: "a", KeyZ: "b", ShiftRight: "select", Enter: "start" };
+import { BUTTONS, controlsPanel, keyMap, loadBindings, pads, readPads } from "/controls.js";
 
 const params = new URLSearchParams(location.search);
 const match = params.get("match") ?? "";
@@ -45,20 +42,22 @@ function drawUpdate(buf) {
   return true;
 }
 
-// The other player's screen: drag to move, drag the corner dot to resize. Its place and
-// size are kept as fractions of the screen area, so they survive rotation and reloads.
+// The other player's screen floats over the whole page: drag it anywhere, drag the corner
+// dot to resize it. Its place is kept as fractions of the window and its width as a
+// fraction of the screen area, so they survive rotation and reloads.
 const area = pip.parentElement;
 const PIP_KEY = "pip";
 let box = { x: 1, y: 0, w: 0.36 };                    // x, y: 0 = left/top edge, 1 = right/bottom
 try { box = { ...box, ...JSON.parse(localStorage.getItem(PIP_KEY) ?? "{}") }; } catch { /* default */ }
+document.body.append(pip);
 
+const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+const pipWidth = (w) => clamp(w, 0.2, 0.8) * Math.min(area.clientWidth, innerWidth);
 function placePip() {
-  const a = area.getBoundingClientRect();
-  const w = Math.min(Math.max(box.w, 0.2), 0.8) * a.width;
-  const h = (w * 144) / 160;
+  const w = pipWidth(box.w), h = (w * 144) / 160;
   pip.style.width = `${w}px`;
-  pip.style.left = `${Math.max(0, a.width - w) * Math.min(Math.max(box.x, 0), 1)}px`;
-  pip.style.top = `${Math.max(0, a.height - h) * Math.min(Math.max(box.y, 0), 1)}px`;
+  pip.style.left = `${Math.max(0, innerWidth - w) * clamp(box.x, 0, 1)}px`;
+  pip.style.top = `${Math.max(0, innerHeight - h) * clamp(box.y, 0, 1)}px`;
 }
 function keepPip() {
   try { localStorage.setItem(PIP_KEY, JSON.stringify(box)); } catch { /* not kept */ }
@@ -69,27 +68,29 @@ pip.addEventListener("pointerdown", (e) => {
   e.preventDefault();
   e.stopPropagation();
   pip.setPointerCapture(e.pointerId);
-  const a = area.getBoundingClientRect(), r = pip.getBoundingClientRect();
-  gesture = { id: e.pointerId, resize: e.target.classList.contains("resize"), x: e.clientX, y: e.clientY, a, r };
+  gesture = { id: e.pointerId, resize: e.target.classList.contains("resize"), x: e.clientX, y: e.clientY,
+              r: pip.getBoundingClientRect(), w: box.w };
 });
 pip.addEventListener("pointermove", (e) => {
   if (gesture?.id !== e.pointerId) return;
-  const { a, r } = gesture, dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
+  const { r } = gesture, dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
+  let left = r.left + dx, top = r.top + dy, w = r.width;
   if (gesture.resize) {
-    box.w = Math.min(Math.max((r.width + Math.max(dx, (dy * 160) / 144)) / a.width, 0.2), 0.8);
-    const w = box.w * a.width, h = (w * 144) / 160;
-    box.x = a.width > w ? Math.min(Math.max((r.left - a.left) / (a.width - w), 0), 1) : 0;
-    box.y = a.height > h ? Math.min(Math.max((r.top - a.top) / (a.height - h), 0), 1) : 0;
-  } else {
-    box.x = a.width > r.width ? Math.min(Math.max((r.left - a.left + dx) / (a.width - r.width), 0), 1) : 0;
-    box.y = a.height > r.height ? Math.min(Math.max((r.top - a.top + dy) / (a.height - r.height), 0), 1) : 0;
+    box.w = clamp((gesture.w * (r.width + Math.max(dx, (dy * 160) / 144))) / r.width, 0.2, 0.8);
+    w = pipWidth(box.w);
+    left = r.left;
+    top = r.top;
   }
+  const h = (w * 144) / 160;
+  box.x = innerWidth > w ? clamp(left / (innerWidth - w), 0, 1) : 0;
+  box.y = innerHeight > h ? clamp(top / (innerHeight - h), 0, 1) : 0;
   placePip();
 });
 const endGesture = (e) => { if (gesture?.id === e.pointerId) { gesture = null; keepPip(); } };
 pip.addEventListener("pointerup", endGesture);
 pip.addEventListener("pointercancel", endGesture);
 new ResizeObserver(placePip).observe(area);
+addEventListener("resize", placePip);
 placePip();
 
 // Show or hide the other player's screen.
@@ -102,12 +103,43 @@ function setSolo(solo) {
 viewButton.addEventListener("click", () => setSolo(!document.body.classList.contains("solo")));
 try { setSolo(localStorage.getItem("solo") === "1"); } catch { setSolo(false); }
 
+// ---- results: only the server decides them (it reads the game's own memory); this page
+// just shows what it is told, over the screens rather than in them.
+const result = document.getElementById("result");
+const CONFETTI = ["#6cd38a", "#f4d35e", "#e07a6a", "#5fa8f5", "#c792ea", "#ffffff"];
+let resultTimer;
+
+function showResult({ winner, wins, best, over }) {
+  const me = Number(player) - 1, won = winner === Number(player);
+  const score = `${wins[me]} – ${wins[1 - me]}`;
+  result.className = `show ${won ? "win" : "lose"}${over ? " over" : ""}`;
+  result.querySelector("strong").textContent = won ? "YOU WIN" : "YOU LOSE";
+  result.querySelector("span").textContent = over
+    ? `${won ? "Match won" : "Match lost"} ${score}`
+    : `${won ? "Round won" : "Round lost"} · ${score} · first to ${best}`;
+  for (const old of result.querySelectorAll("i")) old.remove();
+  const count = won ? (over ? 140 : 70) : (over ? 50 : 24);   // confetti when you win, grey rain when you lose
+  for (let n = 0; n < count; n++) {
+    const bit = document.createElement("i");
+    bit.style.left = `${Math.random() * 100}%`;
+    if (won) bit.style.background = CONFETTI[n % CONFETTI.length];
+    bit.style.setProperty("--t", `${(won ? 1.8 : 1.2) + Math.random() * 1.6}s`);
+    bit.style.setProperty("--d", `${Math.random() * (over ? 1.5 : 0.6)}s`);
+    bit.style.setProperty("--dx", `${won ? (Math.random() - 0.5) * 160 : 0}px`);
+    bit.style.setProperty("--r", `${won ? (Math.random() - 0.5) * 1440 : 0}deg`);
+    result.append(bit);
+  }
+  navigator.vibrate?.(won ? [40, 60, 40, 60, 120] : [200]);
+  clearTimeout(resultTimer);
+  resultTimer = setTimeout(() => { result.className = ""; }, over ? 6000 : 3500);
+}
+
 // ---- buttons: each finger (pointer) holds at most one button; sliding moves it
 const held = new Map();
-let keys = 0, state = 0, sent = -1, ws = null, joined = false;
+let keys = 0, pad = 0, state = 0, sent = -1, ws = null, joined = false;
 
 function update() {
-  let bits = keys;
+  let bits = keys | pad;
   for (const el of held.values()) bits |= BUTTONS[el.dataset.key];
   for (const el of document.querySelectorAll("[data-key]")) {
     el.classList.toggle("down", (bits & BUTTONS[el.dataset.key]) !== 0);
@@ -139,9 +171,47 @@ document.addEventListener("pointermove", (e) => { if (held.has(e.pointerId)) pre
 document.addEventListener("pointerup", release);
 document.addEventListener("pointercancel", release);
 document.addEventListener("contextmenu", (e) => e.preventDefault());
-addEventListener("keydown", (e) => { if (KEYS[e.code]) { e.preventDefault(); keys |= BUTTONS[KEYS[e.code]]; update(); } });
-addEventListener("keyup", (e) => { if (KEYS[e.code]) { e.preventDefault(); keys &= ~BUTTONS[KEYS[e.code]]; update(); } });
-addEventListener("blur", () => { held.clear(); keys = 0; update(); });
+// ---- keyboard and gamepad, as set in the Controls panel (controls.js)
+let bindings = loadBindings(), keymap = keyMap(bindings);
+const down = new Set();                               // key codes held
+const settings = document.getElementById("settings");
+const panel = controlsPanel(settings, bindings, (b) => { bindings = b; keymap = keyMap(b); });
+document.getElementById("controls").addEventListener("click", () => {
+  down.clear(); keys = 0; pad = 0; update();          // nothing stays held while setting
+  panel.open();
+});
+
+function setKey(e, on) {
+  if (settings.open || !keymap.has(e.code) || (on && (e.ctrlKey || e.metaKey || e.altKey))) return;
+  e.preventDefault();
+  if (on) down.add(e.code); else down.delete(e.code);
+  keys = 0;
+  for (const code of down) keys |= keymap.get(code) ?? 0;
+  update();
+}
+addEventListener("keydown", (e) => setKey(e, true));
+addEventListener("keyup", (e) => setKey(e, false));
+addEventListener("blur", () => { held.clear(); down.clear(); keys = 0; update(); });
+
+// Gamepads have no events for presses: read them every animation frame while one is
+// connected. All connected pads drive this player.
+const padIcon = document.getElementById("pads");
+let polling = false;
+function pollPads() {
+  const now = pads(), bits = settings.open ? 0 : readPads(now, bindings);
+  if (bits !== pad) { pad = bits; update(); }
+  polling = now.length > 0;
+  if (polling) requestAnimationFrame(pollPads);
+}
+function padsChanged(e) {
+  const n = pads().length;
+  padIcon.textContent = n ? "🎮" : "";
+  padIcon.title = n ? `${e.gamepad.id} connected` : "";
+  if (n && !polling) { polling = true; requestAnimationFrame(pollPads); }
+  if (!n) { pad = 0; update(); }
+}
+addEventListener("gamepadconnected", padsChanged);
+addEventListener("gamepaddisconnected", padsChanged);
 
 // ---- invite (player 1 shares player 2's link)
 if (player === "1") {
@@ -201,6 +271,8 @@ function connect() {
         send();                                       // the server starts from our state
       } else if (msg.t === "peer") {
         peer.textContent = msg.on ? "2 players" : "other player left";
+      } else if (msg.t === "result") {
+        showResult(msg);
       } else if (msg.t === "trap") {
         status(`stopped at ${msg.at}`, "bad");
       }
