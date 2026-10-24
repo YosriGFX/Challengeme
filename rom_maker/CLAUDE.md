@@ -41,7 +41,8 @@ for `skyhop/`. `<name>`: lowercase a-z 0-9 _ -.
    `python3 tools/build.py <name> --bot <name>/bot.mjs --frames 30000 --shots ""`.
    It must print `match over, player N wins` with the Game Boys agreeing on every round.
    For adapter games also run `--players 2` and `--players 3`.
-5. Fill in `<name>/game.json` (title, players, `result`, `start`) and a short
+5. Fill in `<name>/game.json` (title, players, `result`, `start`, and `"shared": true`
+   if every player is visible on each screen) and a short
    `<name>/README.md`: rules, controls, what the counters mean.
 
 Lines like `note: no code at 0048` while translating are normal (unused vectors and

@@ -221,6 +221,9 @@ The server counts a round once every Game Boy agrees on the new number; the phon
 everybody's score. `players`/`minPlayers` are the most and fewest seats (whoever opens
 the match picks), `inputs` rows have one button byte per player.
 
+Add `"shared": true` to `game.json` when every player is visible on each Game Boy's own
+screen (Coin Duel, Sky Hop): phones then start with the other players' screens hidden.
+
 After each round, put the players back at their start and wait until **every** player
 has pressed START (a new press, not one held from before) before the next round begins;
 show PRESS START and who is ready. Coin Duel does this with `wWait`, `wReady1`/`wReady2`

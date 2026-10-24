@@ -215,7 +215,7 @@ export class Match extends DurableObject {
       if (other !== ws && other.deserializeAttachment()?.joined) other.close(4000, "replaced");
     }
     ws.serializeAttachment({ player, joined: true, at: Date.now() });
-    ws.send(JSON.stringify({ t: "seat", player, game, seats: this.n, token: issued }));
+    ws.send(JSON.stringify({ t: "seat", player, game, seats: this.n, shared: GAMES[game].shared, token: issued }));
     this.views[player - 1] = { encoders: this.seats().map((p) => new FrameEncoder(p - 1)), seq: 0, acked: 0,
                                frameSeq: this.seats().map(() => -1), soundFresh: true };
     console.log(JSON.stringify({ msg: "join", player, game, claimed: issued !== null }));

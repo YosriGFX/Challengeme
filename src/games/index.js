@@ -27,12 +27,15 @@ import tetris from "./tetris.wasm";
 // game `frames` frames ahead at once, pressing buttons as it goes: each [frame, player 1,
 // player 2, ...] sets every Game Boy's buttons from that frame on. Players start in the match.
 //
+// `shared: true` marks games that show every player on each Game Boy's own screen: phones
+// then start with the other players' screens hidden.
+//
 // `players` (default 2) is the most seats a match can have, `minPlayers` (default the
 // same) the fewest; whoever opens the match picks within that. Two Game Boys are joined
 // by a link cable, more by the 4-Player Adapter; `link: "adapter"` uses the adapter for
 // two as well (games written for it, like Sky Hop).
 const BUILT_IN = [
-  { id: "skyhop", title: "Sky Hop (2-4 players)", module: skyhop, players: 4, minPlayers: 2, link: "adapter",
+  { id: "skyhop", title: "Sky Hop (2-4 players)", module: skyhop, players: 4, minPlayers: 2, link: "adapter", shared: true,
     result: { winsBy: 0xc000, best: 3, bestAt: 0xc004, bestChoices: [1, 2, 3, 4, 5, 7, 9] },
     // START on player 1 starts the game on the adapter
     start: { frames: 30, inputs: [[10, 0x80, 0, 0, 0], [16, 0, 0, 0, 0]] } },
@@ -43,18 +46,18 @@ const BUILT_IN = [
   { id: "drmario", title: "Dr. Mario (2 players)", module: drmario, result: { wins: 0xd000, theirs: 0xd001, best: 3 },
     // 2 PLAYER GAME, then Start on the settings (virus level 0, speed MED, music CHILL)
     start: { frames: 380, inputs: [[280, 0x08, 0], [286, 0, 0], [300, 0x80, 0], [306, 0, 0], [360, 0x80, 0], [366, 0, 0]] } },
-  { id: "coinduel", title: "Coin Duel (2 players)", module: coinduel, result: { wins: 0xc000, theirs: 0xc001, best: 5, bestAt: 0xc002, bestChoices: [1, 2, 3, 4, 5, 7, 9] },
+  { id: "coinduel", title: "Coin Duel (2 players)", module: coinduel, shared: true, result: { wins: 0xc000, theirs: 0xc001, best: 5, bestAt: 0xc002, bestChoices: [1, 2, 3, 4, 5, 7, 9] },
     // START on player 1 makes the handshake
     start: { frames: 30, inputs: [[10, 0x80, 0], [16, 0, 0]] } },
 ];
 
-// id -> { title, module, result, start, players, minPlayers, link }
+// id -> { title, module, result, start, players, minPlayers, link, shared }
 // Match time limits the opener can pick, in seconds (0 = none), for games whose result
 // the server reads: when time is up, the most round wins takes the match.
 export const TIME_CHOICES = Object.freeze([0, 60, 120, 180, 240, 300, 600]);
 
 export const GAMES = Object.freeze(Object.fromEntries(
   [...local, ...BUILT_IN].map(({ id, title, module, result = null, start = null, players = 2, minPlayers = players,
-                                link = players > 2 ? "adapter" : "cable" }) =>
-    [id, Object.freeze({ title, module, result, start, players, minPlayers, link })]),
+                                link = players > 2 ? "adapter" : "cable", shared = false }) =>
+    [id, Object.freeze({ title, module, result, start, players, minPlayers, link, shared })]),
 ));

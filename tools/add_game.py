@@ -39,7 +39,7 @@ def write_module(games):
         lines.append(f'import g{n} from "./local/{g["id"]}.wasm";')
     lines.append("export default [")
     for n, g in enumerate(games):
-        extra = "".join(f", {k}: {json.dumps(g[k])}" for k in ("result", "start", "players", "minPlayers", "link")
+        extra = "".join(f", {k}: {json.dumps(g[k])}" for k in ("result", "start", "players", "minPlayers", "link", "shared")
                         if k in g)
         lines.append(f'  {{ id: {json.dumps(g["id"])}, title: {json.dumps(g["title"])}, module: g{n}{extra} }},')
     lines.append("];")
@@ -54,7 +54,7 @@ def main(argv=None):
     ap.add_argument("id", nargs="?", help="short name: a-z, 0-9, _ and -")
     ap.add_argument("title", nargs="?", help="name shown on the start page")
     ap.add_argument("--hints", type=Path)
-    ap.add_argument("--meta", type=Path, help="game.json from rom_maker: result, start (and players)")
+    ap.add_argument("--meta", type=Path, help="game.json from rom_maker: result, start (and players, shared)")
     ap.add_argument("--remove", metavar="ID")
     args = ap.parse_args(argv)
 
@@ -81,7 +81,7 @@ def main(argv=None):
         entry = {"id": args.id, "title": title}
         if args.meta:
             meta = json.loads(args.meta.read_text())
-            entry.update({k: meta[k] for k in ("result", "start", "players", "minPlayers", "link") if k in meta})
+            entry.update({k: meta[k] for k in ("result", "start", "players", "minPlayers", "link", "shared") if k in meta})
         games = [g for g in games if g["id"] != args.id] + [entry]
 
     LIST.write_text(json.dumps(games, indent=2) + "\n")

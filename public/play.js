@@ -116,17 +116,25 @@ const placePips = () => { for (const p of pips) p.place(); };
 new ResizeObserver(placePips).observe(area);
 addEventListener("resize", placePips);
 
-// Show or hide the other players' screens.
+// Show or hide the other players' screens. Games that already show every player on one
+// screen start hidden; the choice is remembered separately for those and the others.
 const viewButton = document.getElementById("view");
+let soloKey = "solo";
 const hideLabel = () => (screens.length > 2 ? "Hide others" : "Hide other");
 const showLabel = () => (screens.length > 2 ? "Show others" : "Show other");
 function setSolo(solo) {
   document.body.classList.toggle("solo", solo);
   viewButton.textContent = solo ? showLabel() : hideLabel();
-  try { localStorage.setItem("solo", solo ? "1" : "0"); } catch { /* not kept */ }
+  try { localStorage.setItem(soloKey, solo ? "1" : "0"); } catch { /* not kept */ }
+}
+function restoreSolo(shared) {
+  soloKey = shared ? "solo-shared" : "solo";
+  let kept = null;
+  try { kept = localStorage.getItem(soloKey); } catch { /* default */ }
+  setSolo(kept === null ? shared : kept === "1");
 }
 viewButton.addEventListener("click", () => setSolo(!document.body.classList.contains("solo")));
-try { setSolo(localStorage.getItem("solo") === "1"); } catch { setSolo(false); }
+restoreSolo(false);
 
 // ---- lobby: the server starts the match once every player is online and pressed START.
 // A player who goes offline pauses it from their 30 s budget; out of time, they lose.
@@ -405,6 +413,7 @@ function connect() {
       if (msg.t === "seat") {
         if (msg.token) saveToken(msg.token);
         buildScreens(msg.seats ?? 2);
+        restoreSolo(msg.shared === true);
         showInvites(msg.seats ?? 2);
         for (const s of screens) s.decoder.px.fill(0);   // the server starts again from blank
         sound.reset();
