@@ -1,7 +1,8 @@
 ; COIN DUEL: the example two-player game. Each player moves a square; a coin appears at
 ; the same place on both Game Boys; whoever touches it first wins the round; first to
-; WINS_TO_MATCH wins the match. After each round everything stands still for a moment
-; (ROUND_PAUSE), then both players go back to their start and a new coin appears.
+; the number of round wins the server chose ($C002) wins the match. After each round
+; both players go back to their start and the next round begins once both have pressed
+; START.
 ;
 ; It shows everything a Challenge Me game needs (see ../ASSEMBLY.md):
 ; - a link handshake that decides who is player 1 (master) and player 2 (slave),
@@ -17,11 +18,9 @@
 INCLUDE "hardware.inc"
 INCLUDE "tiles.asm"
 
-DEF WINS_TO_MATCH EQU 5
+DEF WINS_TO_MATCH EQU 5            ; round wins for the match when the server sets none
 DEF HELLO         EQU $A5          ; player 1's first byte
 DEF SPEED         EQU 2            ; pixels per frame
-DEF ROUND_PAUSE   EQU 210          ; frames everything stands still after a round (3.5 s,
-                                   ; as long as the phone shows the round result)
 ; Sprite coordinates of the play area (a sprite's X is screen x + 8, Y is screen y + 16)
 DEF MIN_X EQU 16
 DEF MAX_X EQU 152
@@ -29,11 +28,14 @@ DEF MIN_Y EQU 32
 DEF MAX_Y EQU 144
 
 ; ---------------------------------------------------------------------------- RAM
-; The server reads these two bytes on both Game Boys to announce rounds and the
-; winner. Keep them at fixed addresses and count up by one per round won.
+; The server reads the first two bytes on both Game Boys to announce rounds and the
+; winner. Keep them at fixed addresses and count up by one per round won. The third is
+; written by the server once the game has started: the round wins the players chose
+; for the match (game.json "bestAt").
 SECTION "Results", WRAM0[$C000]
 wMyWins::    db                    ; $C000: rounds won by this Game Boy's player
 wTheirWins:: db                    ; $C001: rounds won by the other player
+wBest::      db                    ; $C002: round wins that win the match, 0 = WINS_TO_MATCH
 
 SECTION "State", WRAM0[$C010]
 wPlayer: db                        ; 1 or 2
@@ -50,7 +52,11 @@ wCoinY:  db                        ; 0 = hidden
 wScore1: db
 wScore2: db
 wOver:   db                        ; 1 once the match is decided
-wPause:  db                        ; frames left in the pause between rounds
+wWait:   db                        ; 1 between rounds, until both players press START
+wReady1: db                        ; 1 once that player pressed START
+wReady2: db
+wLast1:  db                        ; last frame's buttons, to see new presses
+wLast2:  db
 
 ; ---------------------------------------------------------------------------- vectors
 SECTION "VBlank interrupt", ROM0[$40]
@@ -124,6 +130,10 @@ MainLoop:
     ld [wPad1], a
 .update:
     call Update
+    ld a, [wPad1]
+    ld [wLast1], a
+    ld a, [wPad2]
+    ld [wLast2], a
     jr MainLoop
 
 ; ---------------------------------------------------------------------------- link
@@ -229,10 +239,13 @@ InitGame:
     ld [wScore1], a
     ld [wScore2], a
     ld [wOver], a
-    ld [wPause], a
+    ld [wWait], a
     call SetResults
-; Both players back at their start, and a new coin.
-NewRound:
+    call ResetPlayers
+    jp PlaceCoin
+
+; Both players back at their start.
+ResetPlayers:
     ld a, 40
     ld [wP1X], a
     ld a, 128
@@ -240,20 +253,46 @@ NewRound:
     ld a, 88
     ld [wP1Y], a
     ld [wP2Y], a
-    jp PlaceCoin
+    ret
 
 ; One frame of the game, from both players' buttons. Runs the same on both Game Boys.
 Update:
     ld a, [wOver]
     and a
     ret nz
-    ld a, [wPause]                 ; between rounds nobody moves
+    ld a, [wWait]
     and a
     jr z, .play
-    dec a
-    ld [wPause], a
-    ret nz
-    jp NewRound
+    ld a, [wLast1]                 ; between rounds: wait for START from both
+    cpl
+    ld b, a
+    ld a, [wPad1]
+    and b
+    and PAD_START
+    jr z, .notReady1
+    ld a, 1
+    ld [wReady1], a
+.notReady1:
+    ld a, [wLast2]
+    cpl
+    ld b, a
+    ld a, [wPad2]
+    and b
+    and PAD_START
+    jr z, .notReady2
+    ld a, 1
+    ld [wReady2], a
+.notReady2:
+    ld a, [wReady1]
+    ld b, a
+    ld a, [wReady2]
+    and b
+    ret z
+    xor a                          ; both ready: next round
+    ld [wWait], a
+    ld [wReady1], a
+    ld [wReady2], a
+    jp PlaceCoin
 .play:
     ld a, [wPad1]
     ld hl, wP1X
@@ -285,17 +324,19 @@ Update:
     inc [hl]
     call Beep
     call SetResults
+    call Best
+    ld b, a
     ld a, [wScore1]
-    cp WINS_TO_MATCH
+    cp b
     jr nc, .over
     ld a, [wScore2]
-    cp WINS_TO_MATCH
+    cp b
     jr nc, .over
-    ld a, ROUND_PAUSE              ; round over: pause, then start the next one
-    ld [wPause], a
+    ld a, 1                        ; round over: wait for both players' START
+    ld [wWait], a
     xor a
     ld [wCoinY], a                 ; hide the coin
-    ret
+    jp ResetPlayers
 .over:
     ld a, 1
     ld [wOver], a
@@ -414,6 +455,14 @@ Rand:
     ld a, [hl]
     ret
 
+; a = round wins that win the match: the server's choice, or WINS_TO_MATCH.
+Best:
+    ld a, [wBest]
+    and a
+    ret nz
+    ld a, WINS_TO_MATCH
+    ret
+
 ; Copies the scores to the addresses the server reads, from this Game Boy's side.
 SetResults:
     ld a, [wScore1]
@@ -483,7 +532,43 @@ Draw:
     ld a, [wScore2]
     add TILE_DIGIT_0
     ld [_SCRN0 + 18], a
+    ld a, [wWait]                  ; between rounds: PRESS START, and OK by whoever did
+    and a
+    ld hl, PressStart
+    jr nz, .text
+    ld hl, NoText
+.text:
+    ld de, _SCRN0 + 32 * 8 + 4
+    ld b, 11
+.copy:
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    dec b
+    jr nz, .copy
+    ld hl, _SCRN0 + 4
+    ld a, [wReady1]
+    call DrawOk
+    ld hl, _SCRN0 + 14
+    ld a, [wReady2]
+; "OK" at hl if a is not 0, else blank.
+DrawOk:
+    and a
+    ld a, TILE_BLANK
+    jr z, .put
+    ld a, TILE_O
+.put:
+    ld [hl+], a
+    jr z, .put2
+    ld a, TILE_K
+.put2:
+    ld [hl], a
     ret
+
+PressStart:
+    db TILE_P, TILE_R, TILE_E, TILE_S, TILE_S, TILE_BLANK, TILE_S, TILE_T, TILE_A, TILE_R, TILE_T
+NoText:
+    ds 11, TILE_BLANK
 
 ; The field: score line on row 0, walls around rows 1-17. LCD must be off.
 DrawField:

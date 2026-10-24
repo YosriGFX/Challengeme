@@ -27,6 +27,7 @@
     <form id="start">
       <label for="game">Game</label>
       <select id="game" name="game">
+        <option value="coinduel">Coin Duel (2 players)</option>
         <option value="tetris">Tetris (2 players)</option>
         <option value="drmario">Dr. Mario (2 players)</option>
         <option value="rcproam">Super R.C. Pro-Am (2 players)</option>
@@ -37,6 +38,10 @@
       <div id="seats-row" hidden>
         <label for="seats">Players</label>
         <select id="seats" name="seats"></select>
+      </div>
+      <div id="best-row" hidden>
+        <label for="best">Rounds to win the match</label>
+        <select id="best" name="best"></select>
       </div>
       <button>Start match</button>
     </form>

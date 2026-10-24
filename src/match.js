@@ -76,9 +76,11 @@ export class Match extends DurableObject {
     const player = Number(request.headers.get("X-Player"));
     if (!(player >= 1 && player <= MAX_SEATS)) return new Response(null, { status: 400 });
     const game = request.headers.get("X-Game"), seats = Number(request.headers.get("X-Seats"));
+    const best = Number(request.headers.get("X-Best"));
     if (game && Object.hasOwn(GAMES, game) && this.sql.exec(SQL.getGame).toArray().length === 0) {
       this.sql.exec(SQL.setGame, game);                           // whoever opens the match chooses
       if (seats) this.sql.exec(SQL.setSeats, String(seats));
+      if (best) this.sql.exec(SQL.setBest, String(best));
       this.game();
     }
     const { 0: client, 1: server } = new WebSocketPair();
@@ -228,6 +230,13 @@ export class Match extends DurableObject {
     return id;
   }
 
+  // The game's result rule, with the round wins this match's opener picked, if allowed.
+  ruleFor(result) {
+    if (!result?.bestAt) return result;
+    const best = Number(this.sql.exec(SQL.getBest).toArray()[0]?.v);
+    return result.bestChoices.includes(best) ? { ...result, best } : result;
+  }
+
   seats() {
     return Array.from({ length: this.n }, (_, i) => i + 1);
   }
@@ -253,7 +262,8 @@ export class Match extends DurableObject {
     this.buttons.fill(0);
     this.taps.fill(0);
     for (const m of this.machines) { m.buttons = 0; m.takeSound(); }
-    this.rule = this.n === 2 ? result : null;
+    this.rule = this.n === 2 ? this.ruleFor(result) : null;
+    if (this.rule?.bestAt) for (const m of machines) m.u8[this.rule.bestAt] = this.rule.best;
     this.wins = [0, 0];
     this.overAt = 0;
     this.missed = null;
@@ -264,7 +274,7 @@ export class Match extends DurableObject {
     }
     for (const view of this.views) if (view) view.soundFresh = true;
     this.phase = "playing";
-    console.log(JSON.stringify({ msg: "match_start", game, skipped: start?.frames ?? 0 }));
+    console.log(JSON.stringify({ msg: "match_start", game, skipped: start?.frames ?? 0, best: this.rule?.best }));
     this.announce();
     this.start();
   }

@@ -9,6 +9,14 @@ DEF TILE_P1 EQU 2
 DEF TILE_P2 EQU 3
 DEF TILE_COIN EQU 4
 DEF TILE_DIGIT_0 EQU 5
+DEF TILE_P EQU 15                  ; letters for PRESS START and OK
+DEF TILE_R EQU 16
+DEF TILE_E EQU 17
+DEF TILE_S EQU 18
+DEF TILE_T EQU 19
+DEF TILE_A EQU 20
+DEF TILE_O EQU 21
+DEF TILE_K EQU 22
 
 SECTION "Tiles", ROM0
 Tiles:
@@ -146,5 +154,77 @@ Tiles:
     dw `00000300
     dw `00003000
     dw `00330000
+    dw `00000000
+    ; 15: letter P
+    dw `03333000
+    dw `03000300
+    dw `03000300
+    dw `03333000
+    dw `03000000
+    dw `03000000
+    dw `03000000
+    dw `00000000
+    ; 16: letter R
+    dw `03333000
+    dw `03000300
+    dw `03000300
+    dw `03333000
+    dw `03030000
+    dw `03003000
+    dw `03000300
+    dw `00000000
+    ; 17: letter E
+    dw `03333300
+    dw `03000000
+    dw `03000000
+    dw `03333000
+    dw `03000000
+    dw `03000000
+    dw `03333300
+    dw `00000000
+    ; 18: letter S
+    dw `00333300
+    dw `03000000
+    dw `03000000
+    dw `00333000
+    dw `00000300
+    dw `00000300
+    dw `03333000
+    dw `00000000
+    ; 19: letter T
+    dw `03333300
+    dw `00030000
+    dw `00030000
+    dw `00030000
+    dw `00030000
+    dw `00030000
+    dw `00030000
+    dw `00000000
+    ; 20: letter A
+    dw `00333000
+    dw `03000300
+    dw `03000300
+    dw `03333300
+    dw `03000300
+    dw `03000300
+    dw `03000300
+    dw `00000000
+    ; 21: letter O
+    dw `00333000
+    dw `03000300
+    dw `03000300
+    dw `03000300
+    dw `03000300
+    dw `03000300
+    dw `00333000
+    dw `00000000
+    ; 22: letter K
+    dw `03000300
+    dw `03003000
+    dw `03030000
+    dw `03300000
+    dw `03030000
+    dw `03003000
+    dw `03000300
     dw `00000000
 TilesEnd:

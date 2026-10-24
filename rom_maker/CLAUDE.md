@@ -45,8 +45,9 @@ screenshots of title, play and the end of a match.
 - **Fair**: same randomness for both (the shared seed), no advantage for player 1 or 2.
   Both players see both screens, so no hidden information.
 - **Results**: round wins at fixed RAM addresses, "mine" and "theirs" on each Game Boy,
-  +1 per round (ASSEMBLY.md section 9), then a pause of about 3.5 s before the next
-  round. The game ends when one side reaches `best`.
+  +1 per round (ASSEMBLY.md section 9). Between rounds, wait until both players press
+  START. The match length comes from the server (`wBest`, `bestAt`/`bestChoices` in
+  game.json); the game ends when one side reaches it.
 - **Start fast**: boot straight into the match after the handshake; no menus the
   `start` script would have to walk through.
 - **Translator-friendly** (HARDWARE.md section 4): code only in ROM, no addresses kept or

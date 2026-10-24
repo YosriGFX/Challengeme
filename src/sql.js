@@ -8,6 +8,8 @@ export const SQL = Object.freeze({
   setGame: "INSERT OR IGNORE INTO meta (k, v) VALUES ('game', ?)",
   getSeats: "SELECT v FROM meta WHERE k = 'seats'",
   setSeats: "INSERT OR IGNORE INTO meta (k, v) VALUES ('seats', ?)",
+  getBest: "SELECT v FROM meta WHERE k = 'best'",
+  setBest: "INSERT OR IGNORE INTO meta (k, v) VALUES ('best', ?)",
   createResults: "CREATE TABLE IF NOT EXISTS results (round INTEGER PRIMARY KEY, winner INTEGER NOT NULL, " +
     "wins1 INTEGER NOT NULL, wins2 INTEGER NOT NULL, over INTEGER NOT NULL, at INTEGER NOT NULL, " +
     "reason TEXT NOT NULL DEFAULT 'game') STRICT",

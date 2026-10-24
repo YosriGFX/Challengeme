@@ -161,7 +161,7 @@ YOU LOSE on the phones and records it. `game.json`:
 ```json
 {
   "title": "Coin Duel",
-  "result": { "wins": 49152, "theirs": 49153, "best": 5 },
+  "result": { "wins": 49152, "theirs": 49153, "best": 5, "bestAt": 49154, "bestChoices": [1, 2, 3, 4, 5, 7, 9] },
   "start": { "frames": 30, "inputs": [[10, 128, 0], [16, 0, 0]] }
 }
 ```
@@ -171,9 +171,17 @@ end the match. `start` is run on the server before the players see anything: fro
 10 Game Boy 1 holds START (128), from 16 nothing. After the match the server goes back
 to its lobby and starts fresh Game Boys for a rematch, so the ROM needs no rematch menu.
 
-After each round, stop the game for about 3.5 seconds (210 frames) before the next one
-starts: that is how long the phones show the round result, and players expect the game
-to wait for it. The template counts `wPause` down in `Update`, then calls `NewRound`.
+After each round, put both players back at their start and wait until **both** have
+pressed START (a new press, not one held from before) before the next round begins;
+show PRESS START, and OK for whoever is ready. The template does this with `wWait`,
+`wReady1`/`wReady2` and `wLast1`/`wLast2` in `Update`.
+
+Let the players choose the match length: read the round wins that win the match from a
+third fixed byte (template: `wBest` at `$C002`, 0 = the ROM's own default) and list it in
+`game.json` as `"bestAt": 49154` with `"bestChoices": [1, 2, 3, 4, 5, 7, 9]` inside
+`result`. The start page then shows a "Rounds to win the match" choice, and the server
+writes the chosen number to that byte on both Game Boys right after the `start` script.
+Keep the choices at 9 or less if the score is shown as one digit.
 
 ## 10. Bigger games
 

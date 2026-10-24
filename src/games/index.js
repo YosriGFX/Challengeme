@@ -17,7 +17,10 @@ import tetris from "./tetris.wasm";
 // `result` (optional) lets the server decide rounds from the game's own memory. In
 // 2-player mode each Game Boy counts the rounds its player won at RAM address `wins`, and
 // the other player's at `theirs`; a round counts once both Game Boys agree. `best` is the
-// number of round wins that ends the match. Phones never report results.
+// number of round wins that ends the match. Phones never report results. A game that
+// reads its `best` from RAM gives the address as `bestAt` and the numbers players may
+// pick as `bestChoices`: whoever opens the match picks one, and the server writes it to
+// every Game Boy right after the `start` script.
 //
 // `start` (optional) skips the menus: when all players are ready, the server runs the
 // game `frames` frames ahead at once, pressing buttons as it goes: each [frame, player 1,
@@ -39,7 +42,7 @@ const BUILT_IN = [
     // Start on the title: both cars on the grid, just before the countdown
     start: { frames: 900, inputs: [[800, 0x80, 0], [806, 0, 0]] } },
   { id: "f1pole", title: "F-1 Pole Position (1 player each)", module: f1pole },   // 4 players on the adapter: on hold
-  { id: "coinduel", title: "Coin Duel (2 players)", module: coinduel, result: { wins: 0xc000, theirs: 0xc001, best: 5 },
+  { id: "coinduel", title: "Coin Duel (2 players)", module: coinduel, result: { wins: 0xc000, theirs: 0xc001, best: 5, bestAt: 0xc002, bestChoices: [1, 2, 3, 4, 5, 7, 9] },
     // START on player 1 makes the handshake
     start: { frames: 30, inputs: [[10, 0x80, 0], [16, 0, 0]] } },
   { id: "linkdemo", title: "Link demo (2 players)", module: linkdemo },

@@ -11,11 +11,13 @@ const match = params.get("match") ?? "";
 const player = params.get("player");
 const game = params.get("game") ?? "";
 const seatsWanted = params.get("seats") ?? "";
+const bestWanted = params.get("best") ?? "";
 const conn = document.getElementById("conn");
 const peer = document.getElementById("peer");
 
 if (!/^[a-z0-9]{6,16}$/.test(match) || !/^[1-4]$/.test(player ?? "") ||
-    (game !== "" && !/^[a-z0-9_-]{1,32}$/.test(game)) || !/^[2-4]?$/.test(seatsWanted)) {
+    (game !== "" && !/^[a-z0-9_-]{1,32}$/.test(game)) || !/^[2-4]?$/.test(seatsWanted) ||
+    !/^([1-9][0-9]?)?$/.test(bestWanted)) {
   conn.textContent = "Bad match link.";
   throw new Error("bad match link");
 }
@@ -361,6 +363,7 @@ function connect() {
     const q = new URLSearchParams({ player });
     if (game) q.set("game", game);
     if (game && seatsWanted) q.set("seats", seatsWanted);
+    if (game && bestWanted) q.set("best", bestWanted);
     const sock = ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/match/${match}?${q}`);
     sock.binaryType = "arraybuffer";
     sock.addEventListener("open", () => {
