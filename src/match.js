@@ -215,9 +215,7 @@ export class Match extends DurableObject {
       if (other !== ws && other.deserializeAttachment()?.joined) other.close(4000, "replaced");
     }
     ws.serializeAttachment({ player, joined: true, at: Date.now() });
-    ws.send(JSON.stringify({ t: "seat", player, game, seats: this.n, shared: GAMES[game].shared, token: issued }));
-    this.views[player - 1] = { encoders: this.seats().map((p) => new FrameEncoder(p - 1)), seq: 0, acked: 0,
-                               frameSeq: this.seats().map(() => -1), soundFresh: true };
+    this.seat(ws, player, issued);
     console.log(JSON.stringify({ msg: "join", player, game, claimed: issued !== null }));
 
     if (this.phase === "paused" && this.pause.player === player) this.resume();
@@ -229,6 +227,25 @@ export class Match extends DurableObject {
     }
     if (this.machines) this.sendFrame(player);       // where the game stands
     if (this.left || this.timeUp) ws.send(JSON.stringify(this.clock()));
+  }
+
+  // Tells `player`'s phone its seat and starts its screens and sound from blank: from here
+  // on it gets what changed since what it was sent.
+  seat(ws, player, token = null) {
+    const game = this.game();
+    ws.send(JSON.stringify({ t: "seat", player, game, seats: this.n, shared: GAMES[game]?.shared, token }));
+    return this.views[player - 1] = { encoders: this.seats().map((p) => new FrameEncoder(p - 1)), seq: 0, acked: 0,
+                                      frameSeq: this.seats().map(() => -1), soundFresh: true };
+  }
+
+  // What `player`'s phone has been sent. This object forgets that when it sleeps between
+  // events (WebSocket hibernation, e.g. while a player waits in the lobby), though the
+  // phone stays connected: then its phone starts over as if it had just joined.
+  view(player) {
+    const view = this.views[player - 1];
+    if (view) return view;
+    const ws = this.ctx.getWebSockets(`p${player}`).find((w) => w.deserializeAttachment()?.joined);
+    return ws ? this.seat(ws, player) : null;
   }
 
   // The game this match plays, or null; sets this.n, its number of seats.
@@ -400,7 +417,7 @@ export class Match extends DurableObject {
       console.error(JSON.stringify({ msg: "trap", player, at: own.trap.at }));
       this.tell(player, { t: "trap", at: own.trap.at });
     }
-    const view = this.views[player - 1];
+    const view = this.view(player);
     if (!view) return;
     const others = this.machines.map((_, i) => i).filter((i) => i !== player - 1);
     for (const screen of [player - 1, ...others]) {
@@ -418,7 +435,7 @@ export class Match extends DurableObject {
   // Sends `player`'s phone what its own Game Boy wrote to the sound registers; a phone
   // that just joined first gets the registers as they stand.
   sendSound(player, writes) {
-    const view = this.views[player - 1];
+    const view = this.view(player);
     if (!view) return;
     const m = this.machines[player - 1];
     if (view.soundFresh) {
