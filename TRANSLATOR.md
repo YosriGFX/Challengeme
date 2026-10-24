@@ -73,8 +73,8 @@ This translates the game into `src/games/local/` and lists it in `src/games/loca
 both kept out of git. `python -m tools.add_game --remove somegame` takes it out again.
 
 Then restart `npx wrangler dev`, open `http://<your-ip>:8787/` on a phone, pick the game
-and share the player 2 link. The page addresses allowed to connect are in `APP_ORIGIN` in
-`wrangler.jsonc`.
+and share the player 2 link. Pages served by the server itself may connect, over http or https; other page
+addresses must be in `APP_ORIGIN` in `wrangler.jsonc`.
 
 ## 4. When a game stops ("stopped at 09:4770")
 

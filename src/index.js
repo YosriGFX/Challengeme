@@ -25,8 +25,8 @@ export default {
         case "GET ws match": {
           if (!MATCH_ID.test(id ?? "")) return json({ error: "bad_match_id" }, 400);
           if (request.headers.get("Upgrade") !== "websocket") return json({ error: "expected_websocket" }, 426);
-          if (!allowedOrigin(request.headers.get("Origin"), env.APP_ORIGIN)) {
-            console.log(JSON.stringify({ msg: "bad_origin", origin: request.headers.get("Origin") }));
+          if (!allowedOrigin(request, env.APP_ORIGIN)) {
+            console.log(JSON.stringify({ msg: "bad_origin", origin: request.headers.get("Origin"), host: request.headers.get("Host") }));
             return json({ error: "bad_origin" }, 403);
           }
           const player = url.searchParams.get("player");
@@ -55,7 +55,16 @@ export default {
   },
 };
 
-// APP_ORIGIN is one origin or a comma-separated list.
-function allowedOrigin(origin, allowed) {
-  return origin !== null && (allowed ?? "").split(",").some((o) => o.trim() === origin);
+// A page may open a match socket when its origin is in APP_ORIGIN (one origin or a
+// comma-separated list), or when it was served by this host, whatever the scheme: behind
+// a TLS proxy (nginx, wrangler dev --local-protocol https) the page is https while the
+// Worker sees http. Browsers set Origin and Host themselves, so another site's page
+// cannot pass this check.
+function allowedOrigin(request, allowed) {
+  const origin = request.headers.get("Origin");
+  if (origin === null) return false;
+  if ((allowed ?? "").split(",").some((o) => o.trim() === origin)) return true;
+  let host;
+  try { host = new URL(origin).host; } catch { return false; }
+  return [request.headers.get("Host"), request.headers.get("X-Forwarded-Host")].includes(host);
 }

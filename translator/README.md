@@ -45,8 +45,9 @@ npx wrangler dev          # listens on every address, port 8787 (see "dev" in wr
 
 Open `http://192.168.64.10:8787/` (LAN) or `http://172.20.10.3:8787/` (phone hotspot) on a
 phone, pick a game, start a match, and share the player 2 link. Each phone is one Game
-Boy: its screen and its buttons. A page on any other address needs that origin added to
-`APP_ORIGIN` in wrangler.jsonc, or its match socket is refused.
+Boy: its screen and its buttons. Pages served by the server connect on any address, over
+http or https; a page served from elsewhere needs its origin in `APP_ORIGIN` in
+wrangler.jsonc, or its match socket is refused.
 
 Committed games (`src/games/*.wasm`, listed in `src/games/index.js`) need no Python: Dr.
 Mario, the link demo and Hello World. A game is built with `python -m translator rom.gb
