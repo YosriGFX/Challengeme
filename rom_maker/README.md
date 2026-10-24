@@ -27,7 +27,8 @@ builds, translates and plays it on two linked Game Boys, and shows you screensho
 | `tools/run2.mjs` | the two-Game-Boy run on its own |
 | `tools/setup.sh` | downloads the tools |
 
-Try the template: `python3 tools/build.py template`, then open
+Coin Duel is already on the server game list (`src/games/coinduel.wasm`). Try the
+template here: `python3 tools/build.py template`, then open
 `template/build/shot_*.png`.
 
 ## Add a finished game to the server
