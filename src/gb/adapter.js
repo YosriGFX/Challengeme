@@ -12,9 +12,10 @@
 //   $FE, STAT, STAT, STAT     STAT = bits 4-7: ports with a Game Boy answering,
 //                                    bits 0-2: the receiving port's player number, 1-4
 // and each Game Boy answers $88 (to $FE), $88 (to the 1st STAT), RATE, SIZE. A port is
-// connected while it answers $88, $88. Packets start 12.2 ms + (RATE & 15) ms apart.
-// Any Game Boy sending $AA four times in a row starts the game: every port then gets
-// $CC four times, and the transmission phase starts.
+// connected while it answers $88, $88; STAT tells each packet what the one before saw. Packets start 12.2 ms + (RATE & 15) ms apart.
+// Any Game Boy answering $AA instead starts the game: the packet after the one it
+// answered $AA, $AA, $AA to is $CC x 4 to every port instead of a ping, and the
+// transmission phase follows. (Its fourth $AA, in place of SIZE, comes with the first $CC.)
 //
 // Transmission phase: packets of 4 x SIZE bytes, SIZE (1-4) and RATE being player 1's
 // last ping answers. In each packet, each Game Boy's block is its answers to the
@@ -47,7 +48,6 @@ export class Adapter {
     this.pingRate = this.pingRate ?? 0;
     this.rate = this.rate ?? 0;           // player 1's last RATE and SIZE answers
     this.size = this.size ?? 1;
-    this.aa = [0, 0, 0, 0];
   }
 
   // Runs every Game Boy for `cycles`, shifting bytes on the adapter's schedule.
@@ -94,12 +94,11 @@ export class Adapter {
           this.answers[i] = [];
         } else {
           a.push(back[i]);
-          if (at === 2) this.connected[i] = a[0] === 0x88 && a[1] === 0x88;
-          if (at === 3 && i === 0 && this.connected[0] && back[0]) this.pingRate = back[0];
+          if (at === 3 && i === 0 && a[0] === 0x88 && a[1] === 0x88 && back[0]) this.pingRate = back[0];
         }
-        this.aa[i] = back[i] === 0xaa ? this.aa[i] + 1 : 0;
       }
-      if (this.aa.some((n) => n >= 4)) return this.startTransmission();
+      if (at === 3 && this.answers.some((a) => a.every((b) => b === 0xaa))) return this.startTransmission();
+      if (at === 3) this.connected = this.answers.map((a) => a[0] === 0x88 && a[1] === 0x88);
       this.at = (at + 1) & 3;
       this.next += PING_BYTE;
       if (this.at === 0) {
