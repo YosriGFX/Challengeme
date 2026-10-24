@@ -52,8 +52,9 @@ machine without committing it, `python -m tools.add_game rom.gb id "Title"` writ
 `src/games/local/` and `src/games/local.js`, which stay out of git.
 
 Both Game Boys run inside the match's Durable Object (`src/match.js`), linked by cable, at
-59.73 Hz. Phones send one byte when their buttons change and receive screen updates in
-the spirit of VNC's RFB protocol (`src/gb/frames.js`): a scroll is one move command, then
+59.73 Hz. Phones send one byte when their buttons change and receive the screens of both
+Game Boys (player 1 on top, player 2 below, like a split-screen NES game), so the other
+player is never a black box. Updates are in the spirit of VNC's RFB protocol (`src/gb/frames.js`): a scroll is one move command, then
 only the 8x8 tiles that still differ, each sent as solid, two-shade or raw. A still screen
 costs nothing; a one-pixel change costs about 70 bytes. Phones acknowledge updates, so a
 slow phone skips frames instead of queueing them. Cheating is designed out: the game's code and memory never leave

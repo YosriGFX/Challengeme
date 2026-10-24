@@ -4,7 +4,8 @@
 //   node run_wasm.mjs game.wasm <frames> [hexStart:len ...] [--fb] [--shades] [--buttons=HEX]
 //   node run_wasm.mjs --link a.wasm b.wasm <frames> [hexStart:len ...] [--buttons=HEX]
 // --buttons / --buttons2 hold the joypad bits of the first / second machine
-// (bit 0 Right ... bit 7 Start).
+// (bit 0 Right ... bit 7 Start). --restore=N saves the machines after N frames, runs to
+// the end, restores and runs again, and reports whether both runs ended the same.
 import { readFileSync } from "node:fs";
 import { FRAME_CYCLES, GameBoy, memoryPages, runLinked } from "../../src/gb/machine.js";
 
@@ -24,9 +25,29 @@ const machines = files.map((f) => {
 if (buttons) machines[0].buttons = parseInt(buttons.split("=")[1], 16);
 if (buttons2) machines[1].buttons = parseInt(buttons2.split("=")[1], 16);
 
-for (let i = 0; i < Number(frames); i++) {
-  if (linked) runLinked(machines[0], machines[1], FRAME_CYCLES);
-  else machines[0].run(FRAME_CYCLES);
+const restore = [...flags].find((f) => f.startsWith("--restore="));
+const runFrames = (from, to) => {
+  for (let i = from; i < to; i++) {
+    if (linked) runLinked(machines[0], machines[1], FRAME_CYCLES);
+    else machines[0].run(FRAME_CYCLES);
+  }
+};
+let restoreMatches = null;
+if (restore) {
+  const at = Number(restore.split("=")[1]);
+  runFrames(0, at);
+  const saved = machines.map((m) => m.save());
+  runFrames(at, Number(frames));
+  const first = machines.map((m) => m.save());
+  machines.forEach((m, i) => m.load(saved[i]));
+  runFrames(at, Number(frames));
+  restoreMatches = machines.every((m, i) => {
+    const again = m.save();
+    return Buffer.compare(Buffer.from(again.mem), Buffer.from(first[i].mem)) === 0 &&
+      JSON.stringify(again.globals) === JSON.stringify(first[i].globals);
+  });
+} else {
+  runFrames(0, Number(frames));
 }
 
 const report = (m) => {
@@ -39,7 +60,7 @@ const report = (m) => {
     const [s, n] = r.split(":");
     dump[s] = Array.from(m.u8.subarray(parseInt(s, 16), parseInt(s, 16) + Number(n)));
   }
-  const out = { regs, trap: m.trap, frameSeq: m.frameSeq, dump };
+  const out = { regs, trap: m.trap, frameSeq: m.frameSeq, dump, restoreMatches };
   if (flags.has("--fb")) out.fb = Buffer.from(m.pixels).toString("hex");
   if (flags.has("--shades")) out.shades = Buffer.from(m.shadesInto(new Uint8Array(160 * 144))).toString("hex");
   return out;

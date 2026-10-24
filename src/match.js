@@ -6,7 +6,7 @@ import { SQL } from "./sql.js";
 
 const PERIOD = 1000 / FRAME_HZ;
 const MAX_CATCH_UP = 3;             // frames run at most per tick after a stall
-const MAX_UNACKED = 6;              // frames in flight to one phone before we skip frames
+const MAX_UNACKED = 10;             // updates in flight to one phone before we skip frames
 const MAX_INPUTS_PER_SECOND = 120;  // a phone sends only on change; more is abuse
 
 // One match: two linked Game Boys that run here, and only here. Each phone is one
@@ -19,8 +19,10 @@ const MAX_INPUTS_PER_SECOND = 120;  // a phone sends only on change; more is abu
 //
 // Phone -> here: text {"t":"join","token":...} once, then binary: 1 byte = buttons,
 // 2 bytes = ack of frame `seq` (little-endian).
-// Here -> phone: text {"t":"seat"|"peer"|"trap",...}; binary screen updates carrying only
-// what changed since the last update that phone was sent (format: gb/frames.js).
+// Here -> phone: text {"t":"seat"|"peer"|"trap",...}; binary screen updates for both Game
+// Boys, each carrying only what changed since the last update of that screen the phone
+// was sent (format: gb/frames.js). Seeing the opponent's screen live keeps the other
+// player from being a black box; it is still only pixels.
 export class Match extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
@@ -30,7 +32,7 @@ export class Match extends DurableObject {
     this.sql.exec(SQL.createMeta);
     this.machines = null;           // [GameBoy, GameBoy], rebuilt after eviction
     this.buttons = [0, 0];
-    this.views = [null, null];      // per player: what that phone has been sent
+    this.views = [null, null];      // per player: what that phone has been sent, per screen
     this.shades = new Uint8Array(W * H);
     this.rate = new Map();
     this.timer = null;
@@ -104,7 +106,7 @@ export class Match extends DurableObject {
     ws.serializeAttachment({ player, joined: true });
     ws.send(JSON.stringify({ t: "seat", player, game, token: issued, peer: this.joined(3 - player, ws) }));
     this.tell(3 - player, { t: "peer", on: true });
-    this.views[player - 1] = { encoder: new FrameEncoder(), seq: 0, acked: 0, frameSeq: -1 };
+    this.views[player - 1] = { encoders: [new FrameEncoder(0), new FrameEncoder(1)], seq: 0, acked: 0, frameSeq: [-1, -1] };
     console.log(JSON.stringify({ msg: "join", player, game, claimed: issued !== null }));
 
     if (!this.machines) {
@@ -138,23 +140,28 @@ export class Match extends DurableObject {
     this.timer = setTimeout(() => this.tick(), Math.max(1, this.next - Date.now()));
   }
 
+  // Sends `player`'s phone what changed on both screens, its own and the other player's.
   sendFrame(player) {
-    const view = this.views[player - 1];
-    const m = this.machines[player - 1];
-    if (m.trap && !m.trapSent) {
-      m.trapSent = true;
-      console.error(JSON.stringify({ msg: "trap", player, at: m.trap.at }));
-      this.tell(player, { t: "trap", at: m.trap.at });
+    const own = this.machines[player - 1];
+    if (own.trap && !own.trapSent) {
+      own.trapSent = true;
+      console.error(JSON.stringify({ msg: "trap", player, at: own.trap.at }));
+      this.tell(player, { t: "trap", at: own.trap.at });
     }
-    if (!view || m.frameSeq === view.frameSeq) return;
-    if (((view.seq - view.acked) & 0xffff) >= MAX_UNACKED) return;   // phone is behind
-    view.frameSeq = m.frameSeq;
-    const msg = view.encoder.encode(m.shadesInto(this.shades), (view.seq + 1) & 0xffff);
-    if (!msg) return;
-    view.seq = (view.seq + 1) & 0xffff;
-    for (const ws of this.ctx.getWebSockets(`p${player}`)) {
-      if (!ws.deserializeAttachment()?.joined) continue;
-      try { ws.send(msg); } catch { /* closing */ }
+    const view = this.views[player - 1];
+    if (!view) return;
+    for (const screen of [player - 1, 2 - player]) {         // own screen first
+      const m = this.machines[screen];
+      if (m.frameSeq === view.frameSeq[screen]) continue;
+      if (((view.seq - view.acked) & 0xffff) >= MAX_UNACKED) return;   // phone is behind
+      view.frameSeq[screen] = m.frameSeq;
+      const msg = view.encoders[screen].encode(m.shadesInto(this.shades), (view.seq + 1) & 0xffff);
+      if (!msg) continue;
+      view.seq = (view.seq + 1) & 0xffff;
+      for (const ws of this.ctx.getWebSockets(`p${player}`)) {
+        if (!ws.deserializeAttachment()?.joined) continue;
+        try { ws.send(msg); } catch { /* closing */ }
+      }
     }
   }
 

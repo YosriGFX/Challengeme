@@ -9,6 +9,9 @@
   ;; 0x10020 ROM bank at the last trap.
   (import "env" "mem" (memory __PAGES__ __PAGES__ shared))
 
+  ;; Every mutable global is exported (hardware state as "s_*"), so memory plus globals
+  ;; is the whole machine: the host can save and restore it between frames.
+
   ;; Canonical CPU state between translated functions.
   (global $A (export "A") (mut i32) (i32.const 0))
   (global $B (export "B") (mut i32) (i32.const 0))
@@ -29,36 +32,36 @@
 
   ;; Timing. Translated code yields at loop back-edges once $CYC reaches $DEADLINE,
   ;; the earliest pending hardware event (or the frame end).
-  (global $DEADLINE (mut i32) (i32.const 0))
-  (global $FRAME_END (mut i32) (i32.const 0))
+  (global $DEADLINE (export "s_DEADLINE") (mut i32) (i32.const 0))
+  (global $FRAME_END (export "s_FRAME_END") (mut i32) (i32.const 0))
 
   ;; PPU: cycle the current line started, its LY, whether it was drawn, mode for STAT.
-  (global $LINE_T (mut i32) (i32.const 0))
+  (global $LINE_T (export "s_LINE_T") (mut i32) (i32.const 0))
   (global $LY_CUR (export "LY") (mut i32) (i32.const 0))
-  (global $RENDERED (mut i32) (i32.const 0))
-  (global $MODE (mut i32) (i32.const 0))
-  (global $STAT_SIG (mut i32) (i32.const 0))
-  (global $WIN_LINE (mut i32) (i32.const 0))
-  (global $WIN_USED (mut i32) (i32.const 0))
+  (global $RENDERED (export "s_RENDERED") (mut i32) (i32.const 0))
+  (global $MODE (export "s_MODE") (mut i32) (i32.const 0))
+  (global $STAT_SIG (export "s_STAT_SIG") (mut i32) (i32.const 0))
+  (global $WIN_LINE (export "s_WIN_LINE") (mut i32) (i32.const 0))
+  (global $WIN_USED (export "s_WIN_USED") (mut i32) (i32.const 0))
 
   ;; Timer: TIMA held $TIMA at cycle $TIMA_T; DIV counts from $DIV_T0.
-  (global $DIV_T0 (mut i32) (i32.const 0))
-  (global $TIMA (mut i32) (i32.const 0))
-  (global $TIMA_T (mut i32) (i32.const 0))
+  (global $DIV_T0 (export "s_DIV_T0") (mut i32) (i32.const 0))
+  (global $TIMA (export "s_TIMA") (mut i32) (i32.const 0))
+  (global $TIMA_T (export "s_TIMA_T") (mut i32) (i32.const 0))
 
   ;; Serial (master side of the link cable): transfer completes at $SER_DONE.
-  (global $SER_DONE (mut i32) (i32.const 0))
+  (global $SER_DONE (export "s_SER_DONE") (mut i32) (i32.const 0))
 
   ;; Cartridge (MBC). $BANK is the ROM bank mapped at 0x4000-0x7FFF.
   (global $MBC i32 (i32.const __MBC__))
   (global $BANK_MASK i32 (i32.const __BANK_MASK__))
   (global $RAM_BANKS i32 (i32.const __RAM_BANKS__))
   (global $BANK (export "BANK") (mut i32) (i32.const 1))
-  (global $RAM_BANK (mut i32) (i32.const 0))
-  (global $RAM_EN (mut i32) (i32.const 0))
-  (global $MBC_LO (mut i32) (i32.const 1))
-  (global $MBC_HI (mut i32) (i32.const 0))
-  (global $MBC_MODE (mut i32) (i32.const 0))
+  (global $RAM_BANK (export "s_RAM_BANK") (mut i32) (i32.const 0))
+  (global $RAM_EN (export "s_RAM_EN") (mut i32) (i32.const 0))
+  (global $MBC_LO (export "s_MBC_LO") (mut i32) (i32.const 1))
+  (global $MBC_HI (export "s_MBC_HI") (mut i32) (i32.const 0))
+  (global $MBC_MODE (export "s_MBC_MODE") (mut i32) (i32.const 0))
 
   (type $blk (func (result i32)))
   (table $jt __TABLE__ funcref)
@@ -283,7 +286,7 @@
 
   ;; ---------------------------------------------------------------- events
   ;; Earliest pending event at or before `limit`; sets $EV to its kind (0 none, 1 PPU, 2 timer, 3 serial).
-  (global $EV (mut i32) (i32.const 0))
+  (global $EV (export "s_EV") (mut i32) (i32.const 0))
   (func $next_event (result i32) (local $best i32) (local $t i32)
     (local.set $best (global.get $FRAME_END))
     (global.set $EV (i32.const 0))

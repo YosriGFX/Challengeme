@@ -210,6 +210,13 @@ class HardwareTest(unittest.TestCase):
         self.assertEqual((p1["FF80"], p2["FF80"]), ([1, 0x02], [1, 0x01]), "both masters still swap")
         self.assertEqual((p1["FF47"], p2["FF47"]), ([0x3C], [0x3C]), "both halves dark on both")
 
+    def test_save_and_restore_linked_machines(self):
+        """save() then load() is the whole machine: two linked Game Boys restored mid-link
+        run on exactly as they did the first time (memory and every global)."""
+        demo = self.wasm(make_link_demo_rom.build(), "linkdemo")
+        res = run("--link", demo, demo, 12, "--restore=5", "--buttons=10", "--buttons2=20")
+        self.assertTrue(all(m["restoreMatches"] for m in res["machines"]))
+
     def test_serial_without_partner_reads_ff(self):
         res = run(self.wasm(serial_rom(0x42, 0x81), "alone"), 1, "C000:1")
         self.assertEqual(res["dump"]["C000"], [0xFF])

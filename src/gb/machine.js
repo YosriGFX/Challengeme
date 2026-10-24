@@ -86,6 +86,24 @@ export class GameBoy {
     }
   }
 
+  // The whole machine between frames: memory, every exported global, and the link byte
+  // owed to the other Game Boy. load() takes what save() returned on a machine built
+  // from the same module.
+  save() {
+    const globals = {};
+    for (const [name, g] of Object.entries(this.x)) if (g instanceof WebAssembly.Global) globals[name] = g.value;
+    return { mem: this.u8.slice(), globals, toSlave: this.toSlave, trap: this.trap };
+  }
+
+  load(state) {
+    this.u8.set(state.mem);
+    for (const [name, v] of Object.entries(state.globals)) {
+      try { this.x[name].value = v; } catch { /* immutable (cartridge constants) */ }
+    }
+    this.toSlave = state.toSlave;
+    this.trap = state.trap;
+  }
+
   set buttons(bits) { Atomics.store(this.i32, JOYPAD >> 2, bits & 0xff); }
   get frameSeq() { return Atomics.load(this.i32, FRAME_SEQ >> 2); }
 

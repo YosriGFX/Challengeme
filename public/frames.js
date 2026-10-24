@@ -1,8 +1,14 @@
-// Applies the server's screen updates (format: src/gb/frames.js). The phone keeps one
+// Applies the server's screen updates (format: src/gb/frames.js) to one screen; the
+// phone keeps one decoder per Game Boy (screen(buf) says which). It keeps one
 // shade index (0-3) per pixel; an update first moves the picture if it scrolled, then
 // replaces the 8 x 8 tiles that changed.
 export const W = 160, H = 144;
 const COLS = 20, ROWS = 18, MASK_BYTES = 45;
+
+// Which Game Boy an update is for: 0 = player 1, 1 = player 2, -1 = not an update.
+export function screen(buf) {
+  return buf.length >= 5 + MASK_BYTES && (buf[0] === 2 || buf[0] === 3) ? buf[0] - 2 : -1;
+}
 
 export class FrameDecoder {
   constructor() {
@@ -12,7 +18,7 @@ export class FrameDecoder {
 
   // `buf` is one update message; returns false if it is not one.
   apply(buf) {
-    if (buf.length < 5 + MASK_BYTES || buf[0] !== 2) return false;
+    if (screen(buf) < 0) return false;
     const dx = (buf[3] << 24) >> 24, dy = (buf[4] << 24) >> 24;
     if (dx || dy) {
       move(this.px, this.tmp, dx, dy);

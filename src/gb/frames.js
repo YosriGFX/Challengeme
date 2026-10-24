@@ -1,7 +1,11 @@
 // Screen updates in the spirit of VNC's RFB protocol: a phone is sent only what changed
-// on its Game Boy's screen since the last update it was sent.
+// on a Game Boy's screen since the last update of that screen it was sent. Each phone
+// follows both Game Boys of its match, so nobody plays against a black box.
 //
-//   [2][seq u16 LE][dx i8][dy i8][45-byte tile mask][tile, tile, ...]
+//   [2 + screen][seq u16 LE][dx i8][dy i8][45-byte tile mask][tile, tile, ...]
+//
+// screen is 0 for player 1's Game Boy, 1 for player 2's. seq counts all updates sent to
+// one phone, both screens together; the phone acknowledges the last one it drew.
 //
 // 1. Move (like RFB's CopyRect): when the picture scrolled, the phone first shifts what
 //    it has by (dx, dy). Pixel (x, y) becomes old (x - dx, y - dy); pixels whose source is
@@ -16,7 +20,7 @@
 
 export const W = 160, H = 144;
 const COLS = 20, ROWS = 18, MASK_BYTES = 45;
-const MSG_UPDATE = 2;
+const MSG_UPDATE = 2;              // + screen
 const SAMPLE_FROM = 24;            // dirty tiles before a scroll is worth looking for
 const MAX_DX = 8, MAX_DY = 16;     // scroll distances looked for, per frame
 
@@ -59,7 +63,8 @@ function sampleScore(prev, cur, dx, dy, limit) {
 }
 
 export class FrameEncoder {
-  constructor() {
+  constructor(screen = 0) {
+    this.kind = MSG_UPDATE + screen;
     this.prev = new Uint8Array(W * H);     // what the phone shows (it starts all shade 0)
     this.base = new Uint8Array(W * H);
     this.out = new Uint8Array(5 + MASK_BYTES + COLS * ROWS * 17);
@@ -87,7 +92,7 @@ export class FrameEncoder {
     }
 
     const out = this.out;
-    out[0] = MSG_UPDATE;
+    out[0] = this.kind;
     out[1] = seq & 0xff;
     out[2] = (seq >> 8) & 0xff;
     out[3] = dx & 0xff;

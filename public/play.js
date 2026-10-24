@@ -1,6 +1,7 @@
-// One player's phone: the screen of their Game Boy and its buttons. The game runs on
-// the server; this page sends button bytes and draws the screen updates it receives.
-import { FrameDecoder } from "/frames.js";
+// One player's phone: its Game Boy's buttons, and the screens of both Game Boys in the
+// match (player 1 on top, player 2 below), so the other player is never a black box. The
+// games run on the server; this page sends button bytes and draws the updates it receives.
+import { FrameDecoder, screen } from "/frames.js";
 import { PALETTE } from "/palette.js";
 
 const BUTTONS = { right: 1, left: 2, up: 4, down: 8, a: 16, b: 32, select: 64, start: 128 };
@@ -21,20 +22,34 @@ if (!/^[a-z0-9]{6,16}$/.test(match) || (player !== "1" && player !== "2") ||
 }
 document.getElementById("who").textContent = `Player ${player}`;
 
-// ---- screen: what changed arrives as RFB-style updates (moves and 8 x 8 tiles)
-const ctx = document.getElementById("screen").getContext("2d");
-const image = ctx.createImageData(160, 144);
-const decoder = new FrameDecoder();
+// ---- screens: what changed arrives as RFB-style updates (moves and 8 x 8 tiles)
 const RGBA = new Uint32Array(PALETTE.map(([r, g, b]) => (255 << 24 | b << 16 | g << 8 | r) >>> 0));
-const pixels32 = new Uint32Array(image.data.buffer);
+const screens = [1, 2].map((n) => {
+  const ctx = document.getElementById(`screen${n}`).getContext("2d");
+  const image = ctx.createImageData(160, 144);
+  return { ctx, image, pixels32: new Uint32Array(image.data.buffer), decoder: new FrameDecoder() };
+});
+document.getElementById(`fig${player}`).classList.add("own");
+document.querySelector(`#fig${player} figcaption`).textContent = `Player ${player} · you`;
 
 function drawUpdate(buf) {
-  if (!decoder.apply(buf)) return false;
-  const px = decoder.px;
-  for (let i = 0; i < px.length; i++) pixels32[i] = RGBA[px[i]];
-  ctx.putImageData(image, 0, 0);
+  const s = screens[screen(buf)];
+  if (!s || !s.decoder.apply(buf)) return false;
+  const px = s.decoder.px;
+  for (let i = 0; i < px.length; i++) s.pixels32[i] = RGBA[px[i]];
+  s.ctx.putImageData(s.image, 0, 0);
   return true;
 }
+
+// Both screens, or only this player's.
+const viewButton = document.getElementById("view");
+function setSolo(solo) {
+  document.body.classList.toggle("solo", solo);
+  viewButton.textContent = solo ? "Both screens" : "My screen";
+  try { localStorage.setItem("solo", solo ? "1" : "0"); } catch { /* not kept */ }
+}
+viewButton.addEventListener("click", () => setSolo(!document.body.classList.contains("solo")));
+try { setSolo(localStorage.getItem("solo") === "1"); } catch { setSolo(false); }
 
 // ---- buttons: each finger (pointer) holds at most one button; sliding moves it
 const held = new Map();
@@ -126,7 +141,7 @@ function connect() {
       const msg = JSON.parse(e.data);
       if (msg.t === "seat") {
         if (msg.token) saveToken(msg.token);
-        decoder.px.fill(0);                           // the server starts again from blank
+        for (const s of screens) s.decoder.px.fill(0);   // the server starts again from blank
         joined = true;
         retry = 0;
         sent = -1;
