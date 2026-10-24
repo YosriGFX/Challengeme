@@ -23,17 +23,21 @@
 <body>
   <main>
     <h1>Challenge Me</h1>
-    <p>Start a match, then send the invite link to the second player. Each phone is one Game Boy: its screen and its buttons.</p>
+    <p>Start a match, then send the invite links to the other players. Each phone is one Game Boy: its screen and its buttons.</p>
     <form id="start">
       <label for="game">Game</label>
       <select id="game" name="game">
         <option value="tetris">Tetris (2 players)</option>
         <option value="drmario">Dr. Mario (2 players)</option>
         <option value="rcproam">Super R.C. Pro-Am (2 players)</option>
-        <option value="f1pole">F-1 Pole Position (1 player each)</option>
+        <option value="f1pole">F-1 Pole Position (2-4 players)</option>
         <option value="linkdemo">Link demo (2 players)</option>
         <option value="hello">Hello World</option>
       </select>
+      <div id="seats-row" hidden>
+        <label for="seats">Players</label>
+        <select id="seats" name="seats"></select>
+      </div>
       <button>Start match</button>
     </form>
   </main>

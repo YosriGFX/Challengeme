@@ -1,5 +1,5 @@
-// One player's phone: its Game Boy's screen and buttons, with the other player's screen
-// floating over it (picture-in-picture), so the other player is never a black box. The
+// One player's phone: its Game Boy's screen and buttons, with every other player's
+// screen floating over it (picture-in-picture), so nobody plays against a black box. The
 // games run on the server; this page sends button bytes and draws the updates it receives.
 import { FrameDecoder, screen } from "/frames.js";
 import { PALETTE } from "/palette.js";
@@ -10,29 +10,42 @@ const params = new URLSearchParams(location.search);
 const match = params.get("match") ?? "";
 const player = params.get("player");
 const game = params.get("game") ?? "";
+const seatsWanted = params.get("seats") ?? "";
 const conn = document.getElementById("conn");
 const peer = document.getElementById("peer");
 
-if (!/^[a-z0-9]{6,16}$/.test(match) || (player !== "1" && player !== "2") ||
-    (game !== "" && !/^[a-z0-9_-]{1,32}$/.test(game))) {
+if (!/^[a-z0-9]{6,16}$/.test(match) || !/^[1-4]$/.test(player ?? "") ||
+    (game !== "" && !/^[a-z0-9_-]{1,32}$/.test(game)) || !/^[2-4]?$/.test(seatsWanted)) {
   conn.textContent = "Bad match link.";
   throw new Error("bad match link");
 }
+const me = Number(player) - 1;
 document.getElementById("who").textContent = `Player ${player}`;
 
-// ---- screens: what changed arrives as RFB-style updates (moves and 8 x 8 tiles)
+// ---- screens: what changed arrives as RFB-style updates (moves and 8 x 8 tiles). The
+// server says how many seats the match has; each gets a screen.
 const RGBA = new Uint32Array(PALETTE.map(([r, g, b]) => (255 << 24 | b << 16 | g << 8 | r) >>> 0));
-const screens = [1, 2].map((n) => {
-  const ctx = document.getElementById(`screen${n}`).getContext("2d");
-  const image = ctx.createImageData(160, 144);
-  return { ctx, image, pixels32: new Uint32Array(image.data.buffer), decoder: new FrameDecoder() };
-});
-const own = document.getElementById(`fig${player}`);
-const pip = document.getElementById(`fig${3 - player}`);
-own.classList.add("own");
-pip.classList.add("pip");
-own.querySelector("figcaption").textContent = `Player ${player} · you`;
-own.parentElement.prepend(own);
+const area = document.querySelector(".screens");
+let screens = [];
+
+function buildScreens(n) {
+  if (screens.length === n) return;
+  for (const s of screens) s.fig.remove();
+  pips.length = 0;
+  screens = Array.from({ length: n }, (_, i) => {
+    const fig = document.createElement("figure");
+    fig.innerHTML = '<canvas width="160" height="144"></canvas><figcaption></figcaption><span class="resize"></span>';
+    fig.querySelector("figcaption").textContent = i === me ? `Player ${i + 1} · you` : `Player ${i + 1}`;
+    const ctx = fig.querySelector("canvas").getContext("2d");
+    const image = ctx.createImageData(160, 144);
+    return { fig, ctx, image, pixels32: new Uint32Array(image.data.buffer), decoder: new FrameDecoder() };
+  });
+  screens[me].fig.classList.add("own");
+  area.append(screens[me].fig);
+  screens.filter((_, i) => i !== me).forEach((s, k) => addPip(s.fig, k, n));
+  viewButton.hidden = n < 2;
+  viewButton.textContent = document.body.classList.contains("solo") ? showLabel() : hideLabel();
+}
 
 function drawUpdate(buf) {
   const s = screens[screen(buf)];
@@ -43,78 +56,89 @@ function drawUpdate(buf) {
   return true;
 }
 
-// The other player's screen floats over the whole page: drag it anywhere, drag the corner
-// dot to resize it. Its place is kept as fractions of the window and its width as a
-// fraction of the screen area, so they survive rotation and reloads.
-const area = pip.parentElement;
-const PIP_KEY = "pip";
-let box = { x: 1, y: 0, w: 0.36 };                    // x, y: 0 = left/top edge, 1 = right/bottom
-try { box = { ...box, ...JSON.parse(localStorage.getItem(PIP_KEY) ?? "{}") }; } catch { /* default */ }
-document.body.append(pip);
-
+// The other players' screens float over the whole page: drag one anywhere, drag its
+// corner dot to resize it. Each one's place is kept as fractions of the window and its
+// width as a fraction of the screen area, so they survive rotation and reloads.
+const pips = [];
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 const pipWidth = (w) => clamp(w, 0.2, 0.8) * Math.min(area.clientWidth, innerWidth);
-function placePip() {
-  const w = pipWidth(box.w), h = (w * 144) / 160;
-  pip.style.width = `${w}px`;
-  pip.style.left = `${Math.max(0, innerWidth - w) * clamp(box.x, 0, 1)}px`;
-  pip.style.top = `${Math.max(0, innerHeight - h) * clamp(box.y, 0, 1)}px`;
-}
-function keepPip() {
-  try { localStorage.setItem(PIP_KEY, JSON.stringify(box)); } catch { /* not kept */ }
-}
+const PIP_DEFAULTS = [{ x: 1, y: 0 }, { x: 0, y: 0 }, { x: 0.5, y: 0 }];
 
-let gesture = null;
-pip.addEventListener("pointerdown", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  pip.setPointerCapture(e.pointerId);
-  gesture = { id: e.pointerId, resize: e.target.classList.contains("resize"), x: e.clientX, y: e.clientY,
-              r: pip.getBoundingClientRect(), w: box.w };
-});
-pip.addEventListener("pointermove", (e) => {
-  if (gesture?.id !== e.pointerId) return;
-  const { r } = gesture, dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
-  let left = r.left + dx, top = r.top + dy, w = r.width;
-  if (gesture.resize) {
-    box.w = clamp((gesture.w * (r.width + Math.max(dx, (dy * 160) / 144))) / r.width, 0.2, 0.8);
-    w = pipWidth(box.w);
-    left = r.left;
-    top = r.top;
-  }
-  const h = (w * 144) / 160;
-  box.x = innerWidth > w ? clamp(left / (innerWidth - w), 0, 1) : 0;
-  box.y = innerHeight > h ? clamp(top / (innerHeight - h), 0, 1) : 0;
-  placePip();
-});
-const endGesture = (e) => { if (gesture?.id === e.pointerId) { gesture = null; keepPip(); } };
-pip.addEventListener("pointerup", endGesture);
-pip.addEventListener("pointercancel", endGesture);
-new ResizeObserver(placePip).observe(area);
-addEventListener("resize", placePip);
-placePip();
+function addPip(fig, slot, seats) {
+  const key = slot === 0 ? "pip" : `pip${slot}`;   // slot 0 keeps the 2-player place
+  let box = { ...PIP_DEFAULTS[slot], w: seats > 2 ? 0.3 : 0.36 };
+  try { box = { ...box, ...JSON.parse(localStorage.getItem(key) ?? "{}") }; } catch { /* default */ }
+  fig.classList.add("pip");
+  document.body.append(fig);
+  const place = () => {
+    const w = pipWidth(box.w), h = (w * 144) / 160;
+    fig.style.width = `${w}px`;
+    fig.style.left = `${Math.max(0, innerWidth - w) * clamp(box.x, 0, 1)}px`;
+    fig.style.top = `${Math.max(0, innerHeight - h) * clamp(box.y, 0, 1)}px`;
+  };
+  const keep = () => {
+    try { localStorage.setItem(key, JSON.stringify(box)); } catch { /* not kept */ }
+  };
+  let gesture = null;
+  fig.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    fig.setPointerCapture(e.pointerId);
+    for (const p of pips) p.fig.style.zIndex = p.fig === fig ? 6 : 5;    // the one touched comes to the front
+    gesture = { id: e.pointerId, resize: e.target.classList.contains("resize"), x: e.clientX, y: e.clientY,
+                r: fig.getBoundingClientRect(), w: box.w };
+  });
+  fig.addEventListener("pointermove", (e) => {
+    if (gesture?.id !== e.pointerId) return;
+    const { r } = gesture, dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
+    let left = r.left + dx, top = r.top + dy, w = r.width;
+    if (gesture.resize) {
+      box.w = clamp((gesture.w * (r.width + Math.max(dx, (dy * 160) / 144))) / r.width, 0.2, 0.8);
+      w = pipWidth(box.w);
+      left = r.left;
+      top = r.top;
+    }
+    const h = (w * 144) / 160;
+    box.x = innerWidth > w ? clamp(left / (innerWidth - w), 0, 1) : 0;
+    box.y = innerHeight > h ? clamp(top / (innerHeight - h), 0, 1) : 0;
+    place();
+  });
+  const end = (e) => { if (gesture?.id === e.pointerId) { gesture = null; keep(); } };
+  fig.addEventListener("pointerup", end);
+  fig.addEventListener("pointercancel", end);
+  pips.push({ fig, place });
+  place();
+}
+const placePips = () => { for (const p of pips) p.place(); };
+new ResizeObserver(placePips).observe(area);
+addEventListener("resize", placePips);
 
-// Show or hide the other player's screen.
+// Show or hide the other players' screens.
 const viewButton = document.getElementById("view");
+const hideLabel = () => (screens.length > 2 ? "Hide others" : "Hide other");
+const showLabel = () => (screens.length > 2 ? "Show others" : "Show other");
 function setSolo(solo) {
   document.body.classList.toggle("solo", solo);
-  viewButton.textContent = solo ? "Show other" : "Hide other";
+  viewButton.textContent = solo ? showLabel() : hideLabel();
   try { localStorage.setItem("solo", solo ? "1" : "0"); } catch { /* not kept */ }
 }
 viewButton.addEventListener("click", () => setSolo(!document.body.classList.contains("solo")));
 try { setSolo(localStorage.getItem("solo") === "1"); } catch { setSolo(false); }
 
-// ---- lobby: the server starts the match once both players are online and pressed START.
+// ---- lobby: the server starts the match once every player is online and pressed START.
 // A player who goes offline pauses it from their 30 s budget; out of time, they lose.
 const lobby = document.getElementById("lobby");
+const lobbyList = lobby.querySelector("ul");
 let phase = null, countdown = null;
 
 function showLobby({ phase: next, online, ready, played, pause }) {
-  const me = Number(player) - 1, other = 1 - me;
   if (next === "playing" && phase !== "playing") sound.reset();   // a new match
   phase = next;
   lobby.classList.toggle("show", next !== "playing");
   document.body.classList.toggle("lobby", next === "lobby" && !ready[me]);
+  const here = online.filter(Boolean).length;
+  peer.textContent = online.length > 2 ? `${here} of ${online.length} online`
+    : online[1 - me] ? "2 players" : "waiting for the other player";
   let title, hint;
   clearInterval(countdown);
   if (next === "paused" && pause) {
@@ -132,19 +156,30 @@ function showLobby({ phase: next, online, ready, played, pause }) {
     title = played ? "Rematch?" : "Ready?";
     hint = "Press START when you are ready.";
   } else {
+    const missing = online.map((on, i) => (on ? null : i + 1)).filter(Boolean);
+    const waiting = ready.map((r, i) => (r || !online[i] ? null : i + 1)).filter(Boolean);
     title = "Ready!";
-    hint = online[other] ? `Waiting for player ${other + 1} to press START.` : `Waiting for player ${other + 1} to join.`;
+    hint = missing.length ? `Waiting for ${players(missing)} to join.` : `Waiting for ${players(waiting)} to press START.`;
   }
   if (title) {
     lobby.querySelector("strong").textContent = title;
     lobby.querySelector("p").textContent = hint;
   }
-  for (const i of [0, 1]) {
-    const li = document.getElementById(`lobby${i + 1}`);
-    li.className = `${online[i] ? "on" : ""} ${online[i] && ready[i] && next === "lobby" ? "ready" : ""}`;
-    li.firstElementChild.textContent = `Player ${i + 1}${i === me ? " (you)" : ""}`;
-    li.lastElementChild.textContent = !online[i] ? "offline" : next === "lobby" ? (ready[i] ? "ready" : "online") : "online";
+  while (lobbyList.children.length < online.length) {
+    lobbyList.append(Object.assign(document.createElement("li"), { innerHTML: "<span></span><span></span>" }));
   }
+  while (lobbyList.children.length > online.length) lobbyList.lastElementChild.remove();
+  online.forEach((on, i) => {
+    const li = lobbyList.children[i];
+    li.className = `${on ? "on" : ""} ${on && ready[i] && next === "lobby" ? "ready" : ""}`;
+    li.firstElementChild.textContent = `Player ${i + 1}${i === me ? " (you)" : ""}`;
+    li.lastElementChild.textContent = !on ? "offline" : next === "lobby" ? (ready[i] ? "ready" : "online") : "online";
+  });
+}
+
+function players(list) {
+  if (list.length === 1) return `player ${list[0]}`;
+  return `players ${list.slice(0, -1).join(", ")} and ${list.at(-1)}`;
 }
 
 // ---- results: only the server decides them (it reads the game's own memory); this page
@@ -154,8 +189,17 @@ const CONFETTI = ["#6cd38a", "#f4d35e", "#e07a6a", "#5fa8f5", "#c792ea", "#fffff
 let resultTimer;
 
 function showResult({ winner, wins, best, over, forfeit }) {
-  const me = Number(player) - 1, won = winner === Number(player);
-  const score = `${wins[me]} – ${wins[1 - me]}`;
+  if (forfeit && !winner && forfeit !== Number(player)) {      // more than two players: nobody won
+    result.className = "show over";
+    result.querySelector("strong").textContent = "MATCH OVER";
+    result.querySelector("span").textContent = `Player ${forfeit} was offline too long`;
+    for (const old of result.querySelectorAll("i")) old.remove();
+    clearTimeout(resultTimer);
+    resultTimer = setTimeout(() => { result.className = ""; }, 6000);
+    return;
+  }
+  const won = winner === Number(player);
+  const score = `${wins[me] ?? 0} – ${wins[1 - me] ?? 0}`;
   result.className = `show ${won ? "win" : "lose"}${over ? " over" : ""}`;
   result.querySelector("strong").textContent = won ? "YOU WIN" : "YOU LOSE";
   result.querySelector("span").textContent = forfeit
@@ -269,17 +313,24 @@ function padsChanged(e) {
 addEventListener("gamepadconnected", padsChanged);
 addEventListener("gamepaddisconnected", padsChanged);
 
-// ---- invite (player 1 shares player 2's link)
-if (player === "1") {
-  const link = `${location.origin}/play.html?${new URLSearchParams({ match, player: "2" })}`;
-  document.getElementById("invite-link").textContent = `Player 2: ${link}`;
-  document.getElementById("invite").classList.add("show");
-  document.getElementById("share").addEventListener("click", async () => {
-    try {
-      if (navigator.share) await navigator.share({ title: "Challenge Me", url: link });
-      else await navigator.clipboard.writeText(link);
-    } catch { /* cancelled */ }
-  });
+// ---- invite: player 1 shares the other seats' links, once the server says how many
+const invite = document.getElementById("invite");
+function showInvites(seats) {
+  if (player !== "1") return;
+  invite.replaceChildren(...Array.from({ length: seats - 1 }, (_, i) => {
+    const link = `${location.origin}/play.html?${new URLSearchParams({ match, player: String(i + 2) })}`;
+    const row = document.createElement("div");
+    row.innerHTML = '<span></span><button type="button">Share</button>';
+    row.firstElementChild.textContent = `Player ${i + 2}: ${link}`;
+    row.lastElementChild.addEventListener("click", async () => {
+      try {
+        if (navigator.share) await navigator.share({ title: `Challenge Me · player ${i + 2}`, url: link });
+        else await navigator.clipboard.writeText(link);
+      } catch { /* cancelled */ }
+    });
+    return row;
+  }));
+  invite.classList.add("show");
 }
 
 // ---- connection
@@ -309,6 +360,7 @@ function connect() {
     clearTimeout(timer);
     const q = new URLSearchParams({ player });
     if (game) q.set("game", game);
+    if (game && seatsWanted) q.set("seats", seatsWanted);
     const sock = ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/match/${match}?${q}`);
     sock.binaryType = "arraybuffer";
     sock.addEventListener("open", () => {
@@ -334,16 +386,15 @@ function connect() {
       const msg = JSON.parse(e.data);
       if (msg.t === "seat") {
         if (msg.token) saveToken(msg.token);
+        buildScreens(msg.seats ?? 2);
+        showInvites(msg.seats ?? 2);
         for (const s of screens) s.decoder.px.fill(0);   // the server starts again from blank
         sound.reset();
         joined = true;
         retry = 0;
         sent = -1;
         status(msg.game, "on");
-        peer.textContent = msg.peer ? "2 players" : "waiting for the other player";
         send();                                       // the server starts from our state
-      } else if (msg.t === "peer") {
-        peer.textContent = msg.on ? "2 players" : "other player left";
       } else if (msg.t === "lobby") {
         showLobby(msg);
       } else if (msg.t === "result") {
@@ -356,7 +407,8 @@ function connect() {
       if (sock !== ws) return;                      // a link we already gave up on
       clearInterval(ping);
       joined = false;
-      const final = { 4000: "opened on another tab", 4003: `player ${player} is taken`, 4004: "unknown game" }[e.code];
+      const final = { 4000: "opened on another tab", 4003: `player ${player} is taken`, 4004: "unknown game",
+                      4005: `this match has no player ${player}` }[e.code];
       if (final) { status(final, "bad"); return; }
       status("reconnecting…", "bad");
       timer = setTimeout(open, Math.min(3000, 250 * 2 ** retry++) * (0.5 + Math.random()));

@@ -16,7 +16,7 @@
     header { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--muted); font-size: 14px; }
     header button { height: 28px; padding: 0 10px; border-radius: 14px; font-size: 12px; font-weight: 600; }
     #conn.on { color: var(--down); } #conn.bad { color: var(--warn); }
-    /* This phone's Game Boy fills the screen area; the other player's floats over the page
+    /* This phone's Game Boy fills the screen area; the other players' float over the page
        like a video-call picture-in-picture: drag it anywhere, drag its corner to resize it. */
     .screens { position: relative; min-height: 0; display: grid; place-items: center; container-type: size; }
     figure { margin: 0; position: relative; aspect-ratio: 160 / 144; }
@@ -31,8 +31,9 @@
     figcaption { position: absolute; top: 4px; left: 4px; padding: 1px 6px; border-radius: 8px; font-size: 11px;
                  background: rgb(16 20 24 / 0.7); color: var(--text); pointer-events: none; }
     canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; background: #000; border-radius: 6px; }
-    #invite { display: none; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+    #invite { display: none; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
     #invite.show { display: flex; }
+    #invite div { display: flex; align-items: center; gap: 8px; }
     #invite span { flex: 1; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
     #invite button { flex: none; height: 32px; padding: 0 12px; border-radius: 16px; font-size: 13px; }
     .pad { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -99,10 +100,8 @@
 <body>
   <header><span id="who">Player</span><span id="peer"></span><span id="pads"></span><button id="view" type="button">Hide other</button><button id="sound" type="button" aria-label="Sound">🔊</button><button id="controls" type="button" aria-label="Controls">⚙</button><span id="conn">connecting…</span></header>
   <section class="screens">
-    <figure id="fig1"><canvas id="screen1" width="160" height="144"></canvas><figcaption>Player 1</figcaption><span class="resize"></span></figure>
-    <figure id="fig2"><canvas id="screen2" width="160" height="144"></canvas><figcaption>Player 2</figcaption><span class="resize"></span></figure>
   </section>
-  <div id="invite"><span id="invite-link"></span><button id="share" type="button">Share</button></div>
+  <div id="invite"></div>
   <div class="pad">
     <div class="dpad">
       <button data-key="up">▲</button><button data-key="left">◀</button>
@@ -112,7 +111,7 @@
   </div>
   <div class="menu"><button data-key="select">SELECT</button><button data-key="start">START</button></div>
   <div id="lobby" class="show" role="status"><div class="card"><strong>Connecting…</strong><p></p>
-    <ul><li id="lobby1"><span>Player 1</span><span></span></li><li id="lobby2"><span>Player 2</span><span></span></li></ul></div></div>
+    <ul></ul></div></div>
   <dialog id="settings"></dialog>
   <div id="result" role="status" aria-live="assertive"><strong></strong><span></span></div>
   <script type="module" src="/play.js"></script>
