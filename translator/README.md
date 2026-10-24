@@ -39,13 +39,19 @@ Banked code is found on its own when bank 0 switches banks with a constant
 ```sh
 python -m translator roms/linkdemo.gb -o build/linkdemo.wat --wasm
 cp build/linkdemo.wasm public/games/
-npx wrangler dev          # then open http://localhost:8787/?game=linkdemo
+npx wrangler dev          # listens on https://192.168.64.10:8787 (see "dev" in wrangler.jsonc)
 ```
 
-The host page runs two Game Boys in a Web Worker, linked by cable, and shows both. Each
-player opens the controller link under their screen on a phone; buttons travel phone ->
-`Match` Durable Object -> host page -> the Game Boy's shared memory. The keyboard works too.
-Set `APP_ORIGIN` in `wrangler.jsonc` to the deployed origin before deploying.
+Open `https://192.168.64.10:8787/?game=linkdemo` on the host screen and accept the
+self-signed certificate warning once. Each player opens the controller link under their
+screen on a phone on the same network (and accepts the warning once on that phone too).
+HTTPS is required: the host page uses shared WebAssembly memory, which browsers allow only
+in a secure context, and plain http is secure only on `localhost`. To use another address,
+change `dev.ip` and add its origin to `APP_ORIGIN` in `wrangler.jsonc`.
+
+The host page runs two Game Boys in a Web Worker, linked by cable, and shows both. Buttons
+travel phone -> `Match` Durable Object -> host page -> the Game Boy's shared memory. The
+keyboard works too. Set `APP_ORIGIN` to the deployed origin before deploying.
 
 ## Not yet supported
 

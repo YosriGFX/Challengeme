@@ -32,7 +32,17 @@ const players = [1, 2].map((n) => {
            buffer: null, seq: -1, keys: 0, pad: 0 };
 });
 
+// Shared WebAssembly memory needs a cross-origin isolated page, which browsers grant
+// only over HTTPS (or plain http on localhost) with the COOP/COEP headers from _headers.
+if (!crossOriginIsolated) {
+  status.textContent = isSecureContext
+    ? "This page is not cross-origin isolated: the COOP/COEP headers from public/_headers are missing."
+    : `Open this page over HTTPS (https://${location.host}/): shared memory is blocked on plain http except on localhost.`;
+  throw new Error("SharedArrayBuffer unavailable");
+}
+
 const worker = new Worker("/gb/worker.js", { type: "module" });
+worker.onerror = (e) => { status.textContent = `Game worker failed: ${e.message ?? "see the console"}`; };
 worker.onmessage = (e) => {
   const msg = e.data;
   if (msg.t === "ready") {

@@ -16,7 +16,10 @@ export default {
         case "GET ws match": {
           if (!MATCH_ID.test(id ?? "")) return json({ error: "bad_match_id" }, 400);
           if (request.headers.get("Upgrade") !== "websocket") return json({ error: "expected_websocket" }, 426);
-          if (request.headers.get("Origin") !== env.APP_ORIGIN) return json({ error: "bad_origin" }, 403);
+          if (!allowedOrigin(request.headers.get("Origin"), env.APP_ORIGIN)) {
+            console.log(JSON.stringify({ msg: "bad_origin", origin: request.headers.get("Origin") }));
+            return json({ error: "bad_origin" }, 403);
+          }
           const role = url.searchParams.get("role");
           const player = url.searchParams.get("player");
           let seat;
@@ -35,3 +38,8 @@ export default {
     }
   },
 };
+
+// APP_ORIGIN is one origin or a comma-separated list.
+function allowedOrigin(origin, allowed) {
+  return origin !== null && (allowed ?? "").split(",").some((o) => o.trim() === origin);
+}
