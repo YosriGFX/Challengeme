@@ -283,8 +283,14 @@ document.addEventListener("pointermove", (e) => { if (held.has(e.pointerId)) pre
 document.addEventListener("pointerup", release);
 document.addEventListener("pointercancel", release);
 document.addEventListener("contextmenu", (e) => e.preventDefault());
-// Safari ignores user-scalable=no: stop its pinch and double-tap zoom here too.
-for (const type of ["gesturestart", "gesturechange", "dblclick"]) document.addEventListener(type, (e) => e.preventDefault());
+// Safari ignores user-scalable=no: stop its pinch and double-tap zoom here too. A second
+// finger (d-pad and A at once) must never start a pinch.
+for (const type of ["gesturestart", "gesturechange", "gestureend", "dblclick"]) {
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+}
+document.addEventListener("touchstart", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+document.addEventListener("touchmove", (e) => { if (e.touches.length > 1 || e.scale !== undefined && e.scale !== 1) e.preventDefault(); },
+                          { passive: false });
 // ---- sound: starts on the first tap or key press (browsers allow no sooner)
 const sound = new Sound();
 const soundButton = document.getElementById("sound");
