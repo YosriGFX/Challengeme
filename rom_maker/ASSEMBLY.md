@@ -234,6 +234,14 @@ ROM's own default) and list it in
 writes the chosen number to that byte on every Game Boy right after the `start` script.
 Keep the choices at 9 or less if the score is shown as one digit.
 
+**Time limit.** Whoever opens the match can also give it a time (1 to 10 minutes). The
+server keeps that clock, not the ROM: when it runs out, the player with the most round
+wins takes the match, and if the lead is shared, the next round win that puts one player
+ahead ends it ("sudden death"). The ROM needs nothing extra, but it has to play well with
+it: keep rounds short (well under a minute), add a win to the counters the moment the
+round is decided, and make every round end. No stalemate where nobody can win; a round
+nobody wins counts for nobody and the next one starts.
+
 ## 11. Bigger games
 
 - More than 32 KiB: use MBC5 (`rgbfix -m 0x19`, `SECTION "Level", ROMX, BANK[2]`).

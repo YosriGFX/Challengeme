@@ -61,10 +61,13 @@ seen screenshots of the start, play, the end of a round and the end of the match
 - **Fair**: the same randomness for everybody (shared seed, or button bytes mixed into
   the generator), no advantage for any player number. Everybody sees every screen, so no
   hidden information.
-- **Results** (ASSEMBLY.md section 10): round wins at fixed RAM addresses, +1 per round;
+- **Results are required** (ASSEMBLY.md section 10): the server only offers games that
+  report their winner, and it uses the round wins for the match time limit too (when
+  time is up, most round wins takes the match). Round wins at fixed RAM addresses, +1 per round;
   `wins`/`theirs` on the cable, `winsBy` (every player's wins) on the adapter. Between
   rounds, wait until every player presses START. The match length comes from the
-  server (`bestAt`, `bestChoices`); the game ends when a player reaches it.
+  server (`bestAt`, `bestChoices`); the game ends when a player reaches it. Keep rounds
+  short and make every round end, so a timed match always has rounds to count.
 - **Start fast**: boot straight into the match after the link is up; no menus the
   `start` script would have to walk through.
 - **Adapter**: never send `$FF` in a game packet; show which player is "you" and
