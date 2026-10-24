@@ -589,6 +589,9 @@
     ;; Budgets add up from the previous end, so overshoot past one end is paid back.
     (global.set $FRAME_END (i32.add (global.get $FRAME_END) (local.get $budget)))
     (call $hw_catch_up)
+    ;; An interrupt raised from outside between two calls (a link byte from the adapter or
+    ;; the other Game Boy) is taken before any more code runs, as the CPU would.
+    (global.set $PC (call $irq_check (global.get $PC)))
     (loop $next
       (if (global.get $HALT)
         (then (if (i32.lt_s (i32.sub (global.get $CYC) (global.get $DEADLINE)) (i32.const 0))

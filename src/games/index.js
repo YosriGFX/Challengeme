@@ -41,7 +41,16 @@ const BUILT_IN = [
   { id: "rcproam", title: "Super R.C. Pro-Am (2 players)", module: rcproam,
     // Start on the title: both cars on the grid, just before the countdown
     start: { frames: 900, inputs: [[800, 0x80, 0], [806, 0, 0]] } },
-  { id: "f1pole", title: "F-1 Pole Position (1 player each)", module: f1pole },   // 4 players on the adapter: on hold
+  { id: "f1pole", title: "F-1 Pole Position (2-4 players)", module: f1pole, players: 4, minPlayers: 2, link: "adapter",
+    // Multi Player, then (all) A through the race setup, track and laps, SETTING / PIT OUT
+    // and PIT OUT: the cars on the grid, lights about to start. Same script for 2-4 players.
+    start: { frames: 1400, inputs: [[300, 0x80, 0x80, 0x80, 0x80], [306, 0, 0, 0, 0], [330, 0x08, 0x08, 0x08, 0x08],
+                                    [336, 0, 0, 0, 0], [350, 0x08, 0x08, 0x08, 0x08], [356, 0, 0, 0, 0],
+                                    [370, 0x80, 0x80, 0x80, 0x80], [376, 0, 0, 0, 0], [450, 0x80, 0, 0, 0], [456, 0, 0, 0, 0],
+                                    [700, 0x10, 0x10, 0x10, 0x10], [708, 0, 0, 0, 0], [760, 0x10, 0x10, 0x10, 0x10],
+                                    [768, 0, 0, 0, 0], [1090, 0x10, 0x10, 0x10, 0x10], [1098, 0, 0, 0, 0],
+                                    [1250, 0x08, 0x08, 0x08, 0x08], [1258, 0, 0, 0, 0], [1290, 0x10, 0x10, 0x10, 0x10],
+                                    [1298, 0, 0, 0, 0]] } },
   { id: "coinduel", title: "Coin Duel (2 players)", module: coinduel, result: { wins: 0xc000, theirs: 0xc001, best: 5, bestAt: 0xc002, bestChoices: [1, 2, 3, 4, 5, 7, 9] },
     // START on player 1 makes the handshake
     start: { frames: 30, inputs: [[10, 0x80, 0], [16, 0, 0]] } },

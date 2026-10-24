@@ -215,6 +215,8 @@ def discover(rom, ram_code=(), entries=()):
         and padding decode to."""
         v, nops = view(bank), 0
         for _ in range(48):
+            if bank is None and in_window(addr):
+                return False                       # ran off bank 0 into an unknown bank
             k = key(bank, addr)
             if not valid(k) or is_padding(k):
                 return False
@@ -317,18 +319,20 @@ def discover(rom, ram_code=(), entries=()):
     optional, vectors_added = set(IRQ_VECTORS), False
 
     while work or deferred or not vectors_added:
-        if not work and deferred:
-            # Guesses named in more places go first: when two guesses overlap, the better
-            # supported one is kept and the other dropped.
-            work, deferred = sorted(deferred[::-1], key=lambda w: guessed[w[0]]), []
-            continue
-        if not work:
+        if not work and not vectors_added:
+            # Interrupt handlers before any guess: their code is certain once they exist,
+            # and a guess decoded first could take bytes a handler needs.
             vectors_added = True
             if any(i.kind in ("ei", "reti") for i in instrs.values()):
                 hard.update(IRQ_VECTORS)
                 # Lowest first (work is a stack): a handler longer than its 8 bytes runs
                 # on over the next vector, which is then not code of its own.
                 work.extend((v, None, None, True) for v in reversed(IRQ_VECTORS))   # may be padding
+            continue
+        if not work:
+            # Guesses named in more places go first: when two guesses overlap, the better
+            # supported one is kept and the other dropped.
+            work, deferred = sorted(deferred[::-1], key=lambda w: guessed[w[0]]), []
             continue
         k, hint, a_const, tent = work.pop()
         if k in instrs:
