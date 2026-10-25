@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""Draws Dama's tiles and writes tiles.asm (run it from anywhere: python3 make_tiles.py).
+
+Background tiles: blank, the two empty squares, the font (also inverted, for the clock of
+the player to move) and every piece on every square colour as 2 x 2 tiles. Sprite tiles:
+the cursor corner, the move dot and the last-move mark. Edit the drawings below and run
+it again; main.asm uses only the DEF names it writes.
+"""
+from pathlib import Path
+
+LIGHT, DARK = 1, 2                 # square shades; white pieces are shade 0, black 3
+
+# 16 x 16 pieces: '#' outline, 'o' body, '=' the discs' edges, '.' the square.
+PIECES = {
+    # a man: one disc, seen from above and a little from the side
+    "MAN": """
+................
+................
+................
+................
+....########....
+..##oooooooo##..
+.#oooooooooooo#.
+.#oooooooooooo#.
+.#=oooooooooo=#.
+.#o==========o#.
+.#oooooooooooo#.
+..##oooooooo##..
+....########....
+................
+................
+................""",
+    # a king ("double"): two discs stacked
+    "KING": """
+................
+....########....
+..##oooooooo##..
+.#oooooooooooo#.
+.#oooooooooooo#.
+.#=oooooooooo=#.
+.#o==========o#.
+.#oooooooooooo#.
+.#=##oooooo##=#.
+.#o==========o#.
+.#oooooooooooo#.
+..##oooooooo##..
+....########....
+................
+................
+................""",
+}
+ORDER = ["MAN", "KING"]                     # piece types 1-2
+
+# 5 x 7 font, drawn in shade 3 on shade 0.
+FONT = {
+    " ": [".....", ".....", ".....", ".....", ".....", ".....", "....."],
+    "A": [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+    "B": ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."],
+    "C": [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."],
+    "D": ["####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."],
+    "E": ["#####", "#....", "#....", "####.", "#....", "#....", "#####"],
+    "F": ["#####", "#....", "#....", "####.", "#....", "#....", "#...."],
+    "G": [".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".####"],
+    "H": ["#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+    "I": [".###.", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."],
+    "J": ["..###", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."],
+    "K": ["#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"],
+    "L": ["#....", "#....", "#....", "#....", "#....", "#....", "#####"],
+    "M": ["#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"],
+    "N": ["#...#", "#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#"],
+    "O": [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
+    "P": ["####.", "#...#", "#...#", "####.", "#....", "#....", "#...."],
+    "Q": [".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#"],
+    "R": ["####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"],
+    "S": [".####", "#....", "#....", ".###.", "....#", "....#", "####."],
+    "T": ["#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."],
+    "U": ["#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
+    "V": ["#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#.."],
+    "W": ["#...#", "#...#", "#...#", "#.#.#", "#.#.#", "#.#.#", ".#.#."],
+    "X": ["#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#"],
+    "Y": ["#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.."],
+    "Z": ["#####", "....#", "...#.", "..#..", ".#...", "#....", "#####"],
+    "0": [".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."],
+    "1": ["..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."],
+    "2": [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"],
+    "3": ["#####", "...#.", "..#..", "...#.", "....#", "#...#", ".###."],
+    "4": ["...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."],
+    "5": ["#####", "#....", "####.", "....#", "....#", "#...#", ".###."],
+    "6": ["..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###."],
+    "7": ["#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."],
+    "8": [".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."],
+    "9": [".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.."],
+    ":": [".....", "..#..", "..#..", ".....", "..#..", "..#..", "....."],
+    "-": [".....", ".....", ".....", "#####", ".....", ".....", "....."],
+    "!": ["..#..", "..#..", "..#..", "..#..", "..#..", ".....", "..#.."],
+    ".": [".....", ".....", ".....", ".....", ".....", ".##..", ".##.."],
+    "'": ["..#..", "..#..", ".#...", ".....", ".....", ".....", "....."],
+    "?": [".###.", "#...#", "....#", "...#.", "..#..", ".....", "..#.."],
+    "/": ["....#", "....#", "...#.", "..#..", ".#...", "#....", "#...."],
+    "<": ["...#.", "..#..", ".#...", "#....", ".#...", "..#..", "...#."],
+    ">": [".#...", "..#..", "...#.", "....#", "...#.", "..#..", ".#..."],
+}
+CLOCK_CHARS = "0123456789: "     # also drawn inverted, for the clock that runs
+
+# Sprites, 8 x 8: '.' transparent, '1' colour 1, '2' colour 2 (OBP0: 1 = white, 2 = black).
+SPRITES = {
+    "CORNER": ["222222..", "211112..", "212222..", "212.....", "212.....", "222.....", "........", "........"],
+    "DOT": ["........", "..2222..", ".211112.", ".211112.", ".211112.", ".211112.", "..2222..", "........"],
+    "MARK": ["22222...", "2112....", "212.....", "22......", "2.......", "........", "........", "........"],
+}
+
+
+def glyph_tile(rows, ink, paper):
+    tile = [[paper] * 8 for _ in range(8)]
+    for y, row in enumerate(rows):
+        for x, c in enumerate(row):
+            if c == "#":
+                tile[y][x + 1] = ink
+    return tile
+
+
+def piece_tiles(art, black, square):
+    rows = art.strip("\n").split("\n")
+    assert len(rows) == 16 and all(len(r) == 16 for r in rows), art
+    shade = {".": square, "#": 3, "o": 3 if black else 0, "=": 1 if black else 2}
+    px = [[shade[c] for c in row] for row in rows]
+    return [[row[x0:x0 + 8] for row in px[y0:y0 + 8]] for y0, x0 in ((0, 0), (0, 8), (8, 0), (8, 8))]
+
+
+def main():
+    tiles, defs = [], []
+
+    def add(name, tile):
+        defs.append(f"DEF TILE_{name} EQU {len(tiles)}")
+        tiles.append((name, tile))
+
+    add("BLANK", [[0] * 8 for _ in range(8)])
+    add("LIGHT", [[LIGHT] * 8 for _ in range(8)])
+    add("DARK", [[DARK] * 8 for _ in range(8)])
+    charmap = []
+    for ch, rows in FONT.items():
+        if ch == " ":
+            charmap.append(f'CHARMAP " ", TILE_BLANK')
+            continue
+        name = {":": "COLON", "-": "DASH", "!": "BANG", ".": "DOT_", "'": "QUOTE",
+                "?": "QMARK", "/": "SLASH", "<": "LT", ">": "GT"}.get(ch, f"CH_{ch}")
+        add(name, glyph_tile(rows, 3, 0))
+        charmap.append(f'CHARMAP "{ch}", TILE_{name}')
+    for ch in CLOCK_CHARS:
+        name = {":": "INV_COLON", " ": "INV_BLANK"}.get(ch, f"INV_{ch}")
+        add(name, glyph_tile(FONT[ch], 0, 3))
+    defs.append(f"DEF TILE_PIECES EQU {len(tiles)}   ; + ((type - 1) * 4 + black * 2 + dark) * 4 + quarter")
+    for kind in ORDER:
+        for black in (0, 1):
+            for square in (LIGHT, DARK):
+                for q, tile in enumerate(piece_tiles(PIECES[kind], black, square)):
+                    tiles.append((f"{kind} {'black' if black else 'white'} on {'dark' if square == DARK else 'light'} {q}", tile))
+    for name, rows in SPRITES.items():
+        add(f"SPR_{name}", [[int(c) if c != "." else 0 for c in row] for row in rows])
+    assert len(tiles) <= 256, len(tiles)
+
+    out = ["; Dama's tiles, written by make_tiles.py (edit that, not this). 2 bits per pixel as",
+           "; RGBDS backtick rows: 0 = lightest ... 3 = darkest. Everything reads them from $8000.", ""]
+    out += defs + [f"DEF TILE_COUNT EQU {len(tiles)}", ""] + charmap + ["", 'SECTION "Tiles", ROM0', "Tiles:"]
+    for i, (name, tile) in enumerate(tiles):
+        out.append(f"    ; {i}: {name}")
+        out += [f"    dw `{''.join(str(p) for p in row)}" for row in tile]
+    out.append("TilesEnd:")
+    Path(__file__).with_name("tiles.asm").write_text("\n".join(out) + "\n")
+    print(f"tiles.asm: {len(tiles)} tiles")
+
+
+if __name__ == "__main__":
+    main()
