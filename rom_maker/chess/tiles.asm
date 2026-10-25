@@ -45,23 +45,27 @@ DEF TILE_DASH EQU 40
 DEF TILE_BANG EQU 41
 DEF TILE_DOT_ EQU 42
 DEF TILE_QUOTE EQU 43
-DEF TILE_INV_0 EQU 44
-DEF TILE_INV_1 EQU 45
-DEF TILE_INV_2 EQU 46
-DEF TILE_INV_3 EQU 47
-DEF TILE_INV_4 EQU 48
-DEF TILE_INV_5 EQU 49
-DEF TILE_INV_6 EQU 50
-DEF TILE_INV_7 EQU 51
-DEF TILE_INV_8 EQU 52
-DEF TILE_INV_9 EQU 53
-DEF TILE_INV_COLON EQU 54
-DEF TILE_INV_BLANK EQU 55
-DEF TILE_PIECES EQU 56   ; + ((type - 1) * 4 + black * 2 + dark) * 4 + quarter
-DEF TILE_SPR_CORNER EQU 152
-DEF TILE_SPR_DOT EQU 153
-DEF TILE_SPR_MARK EQU 154
-DEF TILE_COUNT EQU 155
+DEF TILE_QMARK EQU 44
+DEF TILE_SLASH EQU 45
+DEF TILE_LT EQU 46
+DEF TILE_GT EQU 47
+DEF TILE_INV_0 EQU 48
+DEF TILE_INV_1 EQU 49
+DEF TILE_INV_2 EQU 50
+DEF TILE_INV_3 EQU 51
+DEF TILE_INV_4 EQU 52
+DEF TILE_INV_5 EQU 53
+DEF TILE_INV_6 EQU 54
+DEF TILE_INV_7 EQU 55
+DEF TILE_INV_8 EQU 56
+DEF TILE_INV_9 EQU 57
+DEF TILE_INV_COLON EQU 58
+DEF TILE_INV_BLANK EQU 59
+DEF TILE_PIECES EQU 60   ; + ((type - 1) * 4 + black * 2 + dark) * 4 + quarter
+DEF TILE_SPR_CORNER EQU 156
+DEF TILE_SPR_DOT EQU 157
+DEF TILE_SPR_MARK EQU 158
+DEF TILE_COUNT EQU 159
 
 CHARMAP " ", TILE_BLANK
 CHARMAP "A", TILE_CH_A
@@ -105,6 +109,10 @@ CHARMAP "-", TILE_DASH
 CHARMAP "!", TILE_BANG
 CHARMAP ".", TILE_DOT_
 CHARMAP "'", TILE_QUOTE
+CHARMAP "?", TILE_QMARK
+CHARMAP "/", TILE_SLASH
+CHARMAP "<", TILE_LT
+CHARMAP ">", TILE_GT
 
 SECTION "Tiles", ROM0
 Tiles:
@@ -504,7 +512,43 @@ Tiles:
     dw `00000000
     dw `00000000
     dw `00000000
-    ; 44: INV_0
+    ; 44: QMARK
+    dw `00333000
+    dw `03000300
+    dw `00000300
+    dw `00003000
+    dw `00030000
+    dw `00000000
+    dw `00030000
+    dw `00000000
+    ; 45: SLASH
+    dw `00000300
+    dw `00000300
+    dw `00003000
+    dw `00030000
+    dw `00300000
+    dw `03000000
+    dw `03000000
+    dw `00000000
+    ; 46: LT
+    dw `00003000
+    dw `00030000
+    dw `00300000
+    dw `03000000
+    dw `00300000
+    dw `00030000
+    dw `00003000
+    dw `00000000
+    ; 47: GT
+    dw `00300000
+    dw `00030000
+    dw `00003000
+    dw `00000300
+    dw `00003000
+    dw `00030000
+    dw `00300000
+    dw `00000000
+    ; 48: INV_0
     dw `33000333
     dw `30333033
     dw `30330033
@@ -513,7 +557,7 @@ Tiles:
     dw `30333033
     dw `33000333
     dw `33333333
-    ; 45: INV_1
+    ; 49: INV_1
     dw `33303333
     dw `33003333
     dw `33303333
@@ -522,7 +566,7 @@ Tiles:
     dw `33303333
     dw `33000333
     dw `33333333
-    ; 46: INV_2
+    ; 50: INV_2
     dw `33000333
     dw `30333033
     dw `33333033
@@ -531,7 +575,7 @@ Tiles:
     dw `33033333
     dw `30000033
     dw `33333333
-    ; 47: INV_3
+    ; 51: INV_3
     dw `30000033
     dw `33330333
     dw `33303333
@@ -540,7 +584,7 @@ Tiles:
     dw `30333033
     dw `33000333
     dw `33333333
-    ; 48: INV_4
+    ; 52: INV_4
     dw `33330333
     dw `33300333
     dw `33030333
@@ -549,7 +593,7 @@ Tiles:
     dw `33330333
     dw `33330333
     dw `33333333
-    ; 49: INV_5
+    ; 53: INV_5
     dw `30000033
     dw `30333333
     dw `30000333
@@ -558,7 +602,7 @@ Tiles:
     dw `30333033
     dw `33000333
     dw `33333333
-    ; 50: INV_6
+    ; 54: INV_6
     dw `33300333
     dw `33033333
     dw `30333333
@@ -567,7 +611,7 @@ Tiles:
     dw `30333033
     dw `33000333
     dw `33333333
-    ; 51: INV_7
+    ; 55: INV_7
     dw `30000033
     dw `33333033
     dw `33330333
@@ -576,7 +620,7 @@ Tiles:
     dw `33033333
     dw `33033333
     dw `33333333
-    ; 52: INV_8
+    ; 56: INV_8
     dw `33000333
     dw `30333033
     dw `30333033
@@ -585,7 +629,7 @@ Tiles:
     dw `30333033
     dw `33000333
     dw `33333333
-    ; 53: INV_9
+    ; 57: INV_9
     dw `33000333
     dw `30333033
     dw `30333033
@@ -594,7 +638,7 @@ Tiles:
     dw `33330333
     dw `33003333
     dw `33333333
-    ; 54: INV_COLON
+    ; 58: INV_COLON
     dw `33333333
     dw `33303333
     dw `33303333
@@ -603,7 +647,7 @@ Tiles:
     dw `33303333
     dw `33333333
     dw `33333333
-    ; 55: INV_BLANK
+    ; 59: INV_BLANK
     dw `33333333
     dw `33333333
     dw `33333333
@@ -612,7 +656,7 @@ Tiles:
     dw `33333333
     dw `33333333
     dw `33333333
-    ; 56: PAWN white on light 0
+    ; 60: PAWN white on light 0
     dw `11111111
     dw `11111111
     dw `11111111
@@ -621,7 +665,7 @@ Tiles:
     dw `11111300
     dw `11113000
     dw `11113000
-    ; 57: PAWN white on light 1
+    ; 61: PAWN white on light 1
     dw `11111111
     dw `11111111
     dw `11111111
@@ -630,7 +674,7 @@ Tiles:
     dw `03111111
     dw `00311111
     dw `00311111
-    ; 58: PAWN white on light 2
+    ; 62: PAWN white on light 2
     dw `11111300
     dw `11111130
     dw `11111300
@@ -639,7 +683,7 @@ Tiles:
     dw `11133333
     dw `11111111
     dw `11111111
-    ; 59: PAWN white on light 3
+    ; 63: PAWN white on light 3
     dw `03111111
     dw `31111111
     dw `03111111
@@ -648,7 +692,7 @@ Tiles:
     dw `33331111
     dw `11111111
     dw `11111111
-    ; 60: PAWN white on dark 0
+    ; 64: PAWN white on dark 0
     dw `22222222
     dw `22222222
     dw `22222222
@@ -657,7 +701,7 @@ Tiles:
     dw `22222300
     dw `22223000
     dw `22223000
-    ; 61: PAWN white on dark 1
+    ; 65: PAWN white on dark 1
     dw `22222222
     dw `22222222
     dw `22222222
@@ -666,7 +710,7 @@ Tiles:
     dw `03222222
     dw `00322222
     dw `00322222
-    ; 62: PAWN white on dark 2
+    ; 66: PAWN white on dark 2
     dw `22222300
     dw `22222230
     dw `22222300
@@ -675,7 +719,7 @@ Tiles:
     dw `22233333
     dw `22222222
     dw `22222222
-    ; 63: PAWN white on dark 3
+    ; 67: PAWN white on dark 3
     dw `03222222
     dw `32222222
     dw `03222222
@@ -684,7 +728,7 @@ Tiles:
     dw `33332222
     dw `22222222
     dw `22222222
-    ; 64: PAWN black on light 0
+    ; 68: PAWN black on light 0
     dw `11111111
     dw `11111111
     dw `11111111
@@ -693,7 +737,7 @@ Tiles:
     dw `11111333
     dw `11113333
     dw `11113333
-    ; 65: PAWN black on light 1
+    ; 69: PAWN black on light 1
     dw `11111111
     dw `11111111
     dw `11111111
@@ -702,7 +746,7 @@ Tiles:
     dw `33111111
     dw `33311111
     dw `33311111
-    ; 66: PAWN black on light 2
+    ; 70: PAWN black on light 2
     dw `11111333
     dw `11111133
     dw `11111333
@@ -711,7 +755,7 @@ Tiles:
     dw `11133333
     dw `11111111
     dw `11111111
-    ; 67: PAWN black on light 3
+    ; 71: PAWN black on light 3
     dw `33111111
     dw `31111111
     dw `33111111
@@ -720,7 +764,7 @@ Tiles:
     dw `33331111
     dw `11111111
     dw `11111111
-    ; 68: PAWN black on dark 0
+    ; 72: PAWN black on dark 0
     dw `22222222
     dw `22222222
     dw `22222222
@@ -729,7 +773,7 @@ Tiles:
     dw `22222333
     dw `22223333
     dw `22223333
-    ; 69: PAWN black on dark 1
+    ; 73: PAWN black on dark 1
     dw `22222222
     dw `22222222
     dw `22222222
@@ -738,7 +782,7 @@ Tiles:
     dw `33222222
     dw `33322222
     dw `33322222
-    ; 70: PAWN black on dark 2
+    ; 74: PAWN black on dark 2
     dw `22222333
     dw `22222233
     dw `22222333
@@ -747,7 +791,7 @@ Tiles:
     dw `22233333
     dw `22222222
     dw `22222222
-    ; 71: PAWN black on dark 3
+    ; 75: PAWN black on dark 3
     dw `33222222
     dw `32222222
     dw `33222222
@@ -756,7 +800,7 @@ Tiles:
     dw `33332222
     dw `22222222
     dw `22222222
-    ; 72: KNIGHT white on light 0
+    ; 76: KNIGHT white on light 0
     dw `11111111
     dw `11111111
     dw `11111133
@@ -765,7 +809,7 @@ Tiles:
     dw `11130030
     dw `11300000
     dw `13000000
-    ; 73: KNIGHT white on light 1
+    ; 77: KNIGHT white on light 1
     dw `11111111
     dw `11111111
     dw `13111111
@@ -774,7 +818,7 @@ Tiles:
     dw `00003111
     dw `00003111
     dw `00003111
-    ; 74: KNIGHT white on light 2
+    ; 78: KNIGHT white on light 2
     dw `13000330
     dw `11333130
     dw `11111300
@@ -783,7 +827,7 @@ Tiles:
     dw `11133333
     dw `11111111
     dw `11111111
-    ; 75: KNIGHT white on light 3
+    ; 79: KNIGHT white on light 3
     dw `00003111
     dw `00003111
     dw `00003111
@@ -792,7 +836,7 @@ Tiles:
     dw `33333311
     dw `11111111
     dw `11111111
-    ; 76: KNIGHT white on dark 0
+    ; 80: KNIGHT white on dark 0
     dw `22222222
     dw `22222222
     dw `22222233
@@ -801,7 +845,7 @@ Tiles:
     dw `22230030
     dw `22300000
     dw `23000000
-    ; 77: KNIGHT white on dark 1
+    ; 81: KNIGHT white on dark 1
     dw `22222222
     dw `22222222
     dw `23222222
@@ -810,7 +854,7 @@ Tiles:
     dw `00003222
     dw `00003222
     dw `00003222
-    ; 78: KNIGHT white on dark 2
+    ; 82: KNIGHT white on dark 2
     dw `23000330
     dw `22333230
     dw `22222300
@@ -819,7 +863,7 @@ Tiles:
     dw `22233333
     dw `22222222
     dw `22222222
-    ; 79: KNIGHT white on dark 3
+    ; 83: KNIGHT white on dark 3
     dw `00003222
     dw `00003222
     dw `00003222
@@ -828,7 +872,7 @@ Tiles:
     dw `33333322
     dw `22222222
     dw `22222222
-    ; 80: KNIGHT black on light 0
+    ; 84: KNIGHT black on light 0
     dw `11111111
     dw `11111111
     dw `11111133
@@ -837,7 +881,7 @@ Tiles:
     dw `11133313
     dw `11333333
     dw `13333333
-    ; 81: KNIGHT black on light 1
+    ; 85: KNIGHT black on light 1
     dw `11111111
     dw `11111111
     dw `13111111
@@ -846,7 +890,7 @@ Tiles:
     dw `33333111
     dw `33333111
     dw `33333111
-    ; 82: KNIGHT black on light 2
+    ; 86: KNIGHT black on light 2
     dw `13333313
     dw `11333133
     dw `11111333
@@ -855,7 +899,7 @@ Tiles:
     dw `11133333
     dw `11111111
     dw `11111111
-    ; 83: KNIGHT black on light 3
+    ; 87: KNIGHT black on light 3
     dw `33333111
     dw `33333111
     dw `33333111
@@ -864,7 +908,7 @@ Tiles:
     dw `33333311
     dw `11111111
     dw `11111111
-    ; 84: KNIGHT black on dark 0
+    ; 88: KNIGHT black on dark 0
     dw `22222222
     dw `22222222
     dw `22222233
@@ -873,7 +917,7 @@ Tiles:
     dw `22233313
     dw `22333333
     dw `23333333
-    ; 85: KNIGHT black on dark 1
+    ; 89: KNIGHT black on dark 1
     dw `22222222
     dw `22222222
     dw `23222222
@@ -882,7 +926,7 @@ Tiles:
     dw `33333222
     dw `33333222
     dw `33333222
-    ; 86: KNIGHT black on dark 2
+    ; 90: KNIGHT black on dark 2
     dw `23333313
     dw `22333233
     dw `22222333
@@ -891,7 +935,7 @@ Tiles:
     dw `22233333
     dw `22222222
     dw `22222222
-    ; 87: KNIGHT black on dark 3
+    ; 91: KNIGHT black on dark 3
     dw `33333222
     dw `33333222
     dw `33333222
@@ -900,7 +944,7 @@ Tiles:
     dw `33333322
     dw `22222222
     dw `22222222
-    ; 88: BISHOP white on light 0
+    ; 92: BISHOP white on light 0
     dw `11111111
     dw `11111113
     dw `11111130
@@ -909,7 +953,7 @@ Tiles:
     dw `11113030
     dw `11113000
     dw `11111300
-    ; 89: BISHOP white on light 1
+    ; 93: BISHOP white on light 1
     dw `11111111
     dw `11111111
     dw `31111111
@@ -918,7 +962,7 @@ Tiles:
     dw `00311111
     dw `00311111
     dw `03111111
-    ; 90: BISHOP white on light 2
+    ; 94: BISHOP white on light 2
     dw `11111130
     dw `11111300
     dw `11113000
@@ -927,7 +971,7 @@ Tiles:
     dw `11333333
     dw `11111111
     dw `11111111
-    ; 91: BISHOP white on light 3
+    ; 95: BISHOP white on light 3
     dw `31111111
     dw `03111111
     dw `00311111
@@ -936,7 +980,7 @@ Tiles:
     dw `33333111
     dw `11111111
     dw `11111111
-    ; 92: BISHOP white on dark 0
+    ; 96: BISHOP white on dark 0
     dw `22222222
     dw `22222223
     dw `22222230
@@ -945,7 +989,7 @@ Tiles:
     dw `22223030
     dw `22223000
     dw `22222300
-    ; 93: BISHOP white on dark 1
+    ; 97: BISHOP white on dark 1
     dw `22222222
     dw `22222222
     dw `32222222
@@ -954,7 +998,7 @@ Tiles:
     dw `00322222
     dw `00322222
     dw `03222222
-    ; 94: BISHOP white on dark 2
+    ; 98: BISHOP white on dark 2
     dw `22222230
     dw `22222300
     dw `22223000
@@ -963,7 +1007,7 @@ Tiles:
     dw `22333333
     dw `22222222
     dw `22222222
-    ; 95: BISHOP white on dark 3
+    ; 99: BISHOP white on dark 3
     dw `32222222
     dw `03222222
     dw `00322222
@@ -972,7 +1016,7 @@ Tiles:
     dw `33333222
     dw `22222222
     dw `22222222
-    ; 96: BISHOP black on light 0
+    ; 100: BISHOP black on light 0
     dw `11111111
     dw `11111113
     dw `11111133
@@ -981,7 +1025,7 @@ Tiles:
     dw `11113313
     dw `11113333
     dw `11111333
-    ; 97: BISHOP black on light 1
+    ; 101: BISHOP black on light 1
     dw `11111111
     dw `11111111
     dw `31111111
@@ -990,7 +1034,7 @@ Tiles:
     dw `33311111
     dw `33311111
     dw `33111111
-    ; 98: BISHOP black on light 2
+    ; 102: BISHOP black on light 2
     dw `11111133
     dw `11111333
     dw `11113333
@@ -999,7 +1043,7 @@ Tiles:
     dw `11333333
     dw `11111111
     dw `11111111
-    ; 99: BISHOP black on light 3
+    ; 103: BISHOP black on light 3
     dw `31111111
     dw `33111111
     dw `33311111
@@ -1008,7 +1052,7 @@ Tiles:
     dw `33333111
     dw `11111111
     dw `11111111
-    ; 100: BISHOP black on dark 0
+    ; 104: BISHOP black on dark 0
     dw `22222222
     dw `22222223
     dw `22222233
@@ -1017,7 +1061,7 @@ Tiles:
     dw `22223313
     dw `22223333
     dw `22222333
-    ; 101: BISHOP black on dark 1
+    ; 105: BISHOP black on dark 1
     dw `22222222
     dw `22222222
     dw `32222222
@@ -1026,7 +1070,7 @@ Tiles:
     dw `33322222
     dw `33322222
     dw `33222222
-    ; 102: BISHOP black on dark 2
+    ; 106: BISHOP black on dark 2
     dw `22222233
     dw `22222333
     dw `22223333
@@ -1035,7 +1079,7 @@ Tiles:
     dw `22333333
     dw `22222222
     dw `22222222
-    ; 103: BISHOP black on dark 3
+    ; 107: BISHOP black on dark 3
     dw `32222222
     dw `33222222
     dw `33322222
@@ -1044,7 +1088,7 @@ Tiles:
     dw `33333222
     dw `22222222
     dw `22222222
-    ; 104: ROOK white on light 0
+    ; 108: ROOK white on light 0
     dw `11111111
     dw `11111111
     dw `11111111
@@ -1053,7 +1097,7 @@ Tiles:
     dw `11300000
     dw `11130000
     dw `11130000
-    ; 105: ROOK white on light 1
+    ; 109: ROOK white on light 1
     dw `11111111
     dw `11111111
     dw `11111111
@@ -1062,7 +1106,7 @@ Tiles:
     dw `00003111
     dw `00031111
     dw `00031111
-    ; 106: ROOK white on light 2
+    ; 110: ROOK white on light 2
     dw `11130000
     dw `11130000
     dw `11130000
@@ -1071,7 +1115,7 @@ Tiles:
     dw `13333333
     dw `11111111
     dw `11111111
-    ; 107: ROOK white on light 3
+    ; 111: ROOK white on light 3
     dw `00031111
     dw `00031111
     dw `00031111
@@ -1080,7 +1124,7 @@ Tiles:
     dw `33333311
     dw `11111111
     dw `11111111
-    ; 108: ROOK white on dark 0
+    ; 112: ROOK white on dark 0
     dw `22222222
     dw `22222222
     dw `22222222
@@ -1089,7 +1133,7 @@ Tiles:
     dw `22300000
     dw `22230000
     dw `22230000
-    ; 109: ROOK white on dark 1
+    ; 113: ROOK white on dark 1
     dw `22222222
     dw `22222222
     dw `22222222
@@ -1098,7 +1142,7 @@ Tiles:
     dw `00003222
     dw `00032222
     dw `00032222
-    ; 110: ROOK white on dark 2
+    ; 114: ROOK white on dark 2
     dw `22230000
     dw `22230000
     dw `22230000
@@ -1107,7 +1151,7 @@ Tiles:
     dw `23333333
     dw `22222222
     dw `22222222
-    ; 111: ROOK white on dark 3
+    ; 115: ROOK white on dark 3
     dw `00032222
     dw `00032222
     dw `00032222
@@ -1116,7 +1160,7 @@ Tiles:
     dw `33333322
     dw `22222222
     dw `22222222
-    ; 112: ROOK black on light 0
+    ; 116: ROOK black on light 0
     dw `11111111
     dw `11111111
     dw `11111111
@@ -1125,7 +1169,7 @@ Tiles:
     dw `11333333
     dw `11133333
     dw `11133333
-    ; 113: ROOK black on light 1
+    ; 117: ROOK black on light 1
     dw `11111111
     dw `11111111
     dw `11111111
@@ -1134,7 +1178,7 @@ Tiles:
     dw `33333111
     dw `33331111
     dw `33331111
-    ; 114: ROOK black on light 2
+    ; 118: ROOK black on light 2
     dw `11133333
     dw `11133333
     dw `11133333
@@ -1143,7 +1187,7 @@ Tiles:
     dw `13333333
     dw `11111111
     dw `11111111
-    ; 115: ROOK black on light 3
+    ; 119: ROOK black on light 3
     dw `33331111
     dw `33331111
     dw `33331111
@@ -1152,7 +1196,7 @@ Tiles:
     dw `33333311
     dw `11111111
     dw `11111111
-    ; 116: ROOK black on dark 0
+    ; 120: ROOK black on dark 0
     dw `22222222
     dw `22222222
     dw `22222222
@@ -1161,7 +1205,7 @@ Tiles:
     dw `22333333
     dw `22233333
     dw `22233333
-    ; 117: ROOK black on dark 1
+    ; 121: ROOK black on dark 1
     dw `22222222
     dw `22222222
     dw `22222222
@@ -1170,7 +1214,7 @@ Tiles:
     dw `33333222
     dw `33332222
     dw `33332222
-    ; 118: ROOK black on dark 2
+    ; 122: ROOK black on dark 2
     dw `22233333
     dw `22233333
     dw `22233333
@@ -1179,7 +1223,7 @@ Tiles:
     dw `23333333
     dw `22222222
     dw `22222222
-    ; 119: ROOK black on dark 3
+    ; 123: ROOK black on dark 3
     dw `33332222
     dw `33332222
     dw `33332222
@@ -1188,7 +1232,7 @@ Tiles:
     dw `33333322
     dw `22222222
     dw `22222222
-    ; 120: QUEEN white on light 0
+    ; 124: QUEEN white on light 0
     dw `11111111
     dw `11131113
     dw `11303130
@@ -1197,7 +1241,7 @@ Tiles:
     dw `11130000
     dw `11113000
     dw `11113000
-    ; 121: QUEEN white on light 1
+    ; 125: QUEEN white on light 1
     dw `11111111
     dw `11131111
     dw `31303111
@@ -1206,7 +1250,7 @@ Tiles:
     dw `00031111
     dw `00311111
     dw `00311111
-    ; 122: QUEEN white on light 2
+    ; 126: QUEEN white on light 2
     dw `11111300
     dw `11111300
     dw `11113000
@@ -1215,7 +1259,7 @@ Tiles:
     dw `11333333
     dw `11111111
     dw `11111111
-    ; 123: QUEEN white on light 3
+    ; 127: QUEEN white on light 3
     dw `03111111
     dw `03111111
     dw `00311111
@@ -1224,7 +1268,7 @@ Tiles:
     dw `33333111
     dw `11111111
     dw `11111111
-    ; 124: QUEEN white on dark 0
+    ; 128: QUEEN white on dark 0
     dw `22222222
     dw `22232223
     dw `22303230
@@ -1233,7 +1277,7 @@ Tiles:
     dw `22230000
     dw `22223000
     dw `22223000
-    ; 125: QUEEN white on dark 1
+    ; 129: QUEEN white on dark 1
     dw `22222222
     dw `22232222
     dw `32303222
@@ -1242,7 +1286,7 @@ Tiles:
     dw `00032222
     dw `00322222
     dw `00322222
-    ; 126: QUEEN white on dark 2
+    ; 130: QUEEN white on dark 2
     dw `22222300
     dw `22222300
     dw `22223000
@@ -1251,7 +1295,7 @@ Tiles:
     dw `22333333
     dw `22222222
     dw `22222222
-    ; 127: QUEEN white on dark 3
+    ; 131: QUEEN white on dark 3
     dw `03222222
     dw `03222222
     dw `00322222
@@ -1260,7 +1304,7 @@ Tiles:
     dw `33333222
     dw `22222222
     dw `22222222
-    ; 128: QUEEN black on light 0
+    ; 132: QUEEN black on light 0
     dw `11111111
     dw `11131113
     dw `11333133
@@ -1269,7 +1313,7 @@ Tiles:
     dw `11133333
     dw `11113333
     dw `11113333
-    ; 129: QUEEN black on light 1
+    ; 133: QUEEN black on light 1
     dw `11111111
     dw `11131111
     dw `31333111
@@ -1278,7 +1322,7 @@ Tiles:
     dw `33331111
     dw `33311111
     dw `33311111
-    ; 130: QUEEN black on light 2
+    ; 134: QUEEN black on light 2
     dw `11111333
     dw `11111333
     dw `11113333
@@ -1287,7 +1331,7 @@ Tiles:
     dw `11333333
     dw `11111111
     dw `11111111
-    ; 131: QUEEN black on light 3
+    ; 135: QUEEN black on light 3
     dw `33111111
     dw `33111111
     dw `33311111
@@ -1296,7 +1340,7 @@ Tiles:
     dw `33333111
     dw `11111111
     dw `11111111
-    ; 132: QUEEN black on dark 0
+    ; 136: QUEEN black on dark 0
     dw `22222222
     dw `22232223
     dw `22333233
@@ -1305,7 +1349,7 @@ Tiles:
     dw `22233333
     dw `22223333
     dw `22223333
-    ; 133: QUEEN black on dark 1
+    ; 137: QUEEN black on dark 1
     dw `22222222
     dw `22232222
     dw `32333222
@@ -1314,7 +1358,7 @@ Tiles:
     dw `33332222
     dw `33322222
     dw `33322222
-    ; 134: QUEEN black on dark 2
+    ; 138: QUEEN black on dark 2
     dw `22222333
     dw `22222333
     dw `22223333
@@ -1323,7 +1367,7 @@ Tiles:
     dw `22333333
     dw `22222222
     dw `22222222
-    ; 135: QUEEN black on dark 3
+    ; 139: QUEEN black on dark 3
     dw `33222222
     dw `33222222
     dw `33322222
@@ -1332,7 +1376,7 @@ Tiles:
     dw `33333222
     dw `22222222
     dw `22222222
-    ; 136: KING white on light 0
+    ; 140: KING white on light 0
     dw `11111111
     dw `11111113
     dw `11111133
@@ -1341,7 +1385,7 @@ Tiles:
     dw `11300033
     dw `11300003
     dw `11300000
-    ; 137: KING white on light 1
+    ; 141: KING white on light 1
     dw `11111111
     dw `11111111
     dw `31111111
@@ -1350,7 +1394,7 @@ Tiles:
     dw `30003111
     dw `00003111
     dw `00003111
-    ; 138: KING white on light 2
+    ; 142: KING white on light 2
     dw `11130000
     dw `11113000
     dw `11113000
@@ -1359,7 +1403,7 @@ Tiles:
     dw `11333333
     dw `11111111
     dw `11111111
-    ; 139: KING white on light 3
+    ; 143: KING white on light 3
     dw `00031111
     dw `00311111
     dw `00311111
@@ -1368,7 +1412,7 @@ Tiles:
     dw `33333111
     dw `11111111
     dw `11111111
-    ; 140: KING white on dark 0
+    ; 144: KING white on dark 0
     dw `22222222
     dw `22222223
     dw `22222233
@@ -1377,7 +1421,7 @@ Tiles:
     dw `22300033
     dw `22300003
     dw `22300000
-    ; 141: KING white on dark 1
+    ; 145: KING white on dark 1
     dw `22222222
     dw `22222222
     dw `32222222
@@ -1386,7 +1430,7 @@ Tiles:
     dw `30003222
     dw `00003222
     dw `00003222
-    ; 142: KING white on dark 2
+    ; 146: KING white on dark 2
     dw `22230000
     dw `22223000
     dw `22223000
@@ -1395,7 +1439,7 @@ Tiles:
     dw `22333333
     dw `22222222
     dw `22222222
-    ; 143: KING white on dark 3
+    ; 147: KING white on dark 3
     dw `00032222
     dw `00322222
     dw `00322222
@@ -1404,7 +1448,7 @@ Tiles:
     dw `33333222
     dw `22222222
     dw `22222222
-    ; 144: KING black on light 0
+    ; 148: KING black on light 0
     dw `11111111
     dw `11111113
     dw `11111131
@@ -1413,7 +1457,7 @@ Tiles:
     dw `11333331
     dw `11333331
     dw `11333333
-    ; 145: KING black on light 1
+    ; 149: KING black on light 1
     dw `11111111
     dw `11111111
     dw `31111111
@@ -1422,7 +1466,7 @@ Tiles:
     dw `33333111
     dw `33333111
     dw `33333111
-    ; 146: KING black on light 2
+    ; 150: KING black on light 2
     dw `11133333
     dw `11113333
     dw `11113333
@@ -1431,7 +1475,7 @@ Tiles:
     dw `11333333
     dw `11111111
     dw `11111111
-    ; 147: KING black on light 3
+    ; 151: KING black on light 3
     dw `33331111
     dw `33311111
     dw `33311111
@@ -1440,7 +1484,7 @@ Tiles:
     dw `33333111
     dw `11111111
     dw `11111111
-    ; 148: KING black on dark 0
+    ; 152: KING black on dark 0
     dw `22222222
     dw `22222223
     dw `22222231
@@ -1449,7 +1493,7 @@ Tiles:
     dw `22333331
     dw `22333331
     dw `22333333
-    ; 149: KING black on dark 1
+    ; 153: KING black on dark 1
     dw `22222222
     dw `22222222
     dw `32222222
@@ -1458,7 +1502,7 @@ Tiles:
     dw `33333222
     dw `33333222
     dw `33333222
-    ; 150: KING black on dark 2
+    ; 154: KING black on dark 2
     dw `22233333
     dw `22223333
     dw `22223333
@@ -1467,7 +1511,7 @@ Tiles:
     dw `22333333
     dw `22222222
     dw `22222222
-    ; 151: KING black on dark 3
+    ; 155: KING black on dark 3
     dw `33332222
     dw `33322222
     dw `33322222
@@ -1476,7 +1520,7 @@ Tiles:
     dw `33333222
     dw `22222222
     dw `22222222
-    ; 152: SPR_CORNER
+    ; 156: SPR_CORNER
     dw `22222200
     dw `21111200
     dw `21222200
@@ -1485,7 +1529,7 @@ Tiles:
     dw `22200000
     dw `00000000
     dw `00000000
-    ; 153: SPR_DOT
+    ; 157: SPR_DOT
     dw `00000000
     dw `00222200
     dw `02111120
@@ -1494,7 +1538,7 @@ Tiles:
     dw `02111120
     dw `00222200
     dw `00000000
-    ; 154: SPR_MARK
+    ; 158: SPR_MARK
     dw `22222000
     dw `21120000
     dw `21200000

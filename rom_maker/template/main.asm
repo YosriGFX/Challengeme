@@ -208,28 +208,47 @@ Handshake:
     ld [wSeed + 1], a
     ret
 
-; Swaps this frame's buttons (a) with the other Game Boy's; returns theirs in a.
-; Player 1 clocks the byte; player 2 waits for it. Both Game Boys reach this point at
-; almost the same moment each frame; player 1 waits a little so player 2 is ready.
+; Swaps this frame's buttons (wMyPad) with the other Game Boy's; returns theirs in a.
+; Player 1 clocks the byte; player 2 waits for it. If player 2 is not listening yet (its
+; last frame ran long), player 1's transfer ends with $FF, as on hardware, and player 2
+; gets nothing: so player 1 sends again until a real answer comes. A pad byte is never
+; $FF (pressing everything at once counts as all but A).
 Exchange:
-    ldh [rSB], a
+    ld a, [wMyPad]
+    cp $FF
+    jr nz, .padOk
+    dec a
+    ld [wMyPad], a
+.padOk:
     ld a, [wPlayer]
     cp 1
     jr nz, .slave
-    ld b, 64
+.master:
+    ld b, 64                       ; give player 2 a moment to get ready
 .delay:
     dec b
     jr nz, .delay
+    ld a, [wMyPad]
+    ldh [rSB], a
     ld a, $81
-    jr .go
-.slave:
-    ld a, $80
-.go:
     ldh [rSC], a
-.wait:
+.masterWait:
     ldh a, [rSC]
     bit 7, a
-    jr nz, .wait
+    jr nz, .masterWait
+    ldh a, [rSB]
+    cp $FF                         ; nobody answered: try again
+    jr z, .master
+    ret
+.slave:
+    ld a, [wMyPad]
+    ldh [rSB], a
+    ld a, $80
+    ldh [rSC], a
+.slaveWait:
+    ldh a, [rSC]
+    bit 7, a
+    jr nz, .slaveWait
     ldh a, [rSB]
     ret
 

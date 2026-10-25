@@ -16,6 +16,10 @@ are played for money, so fairness and the server knowing who won matter.
 | exactly 2 | link cable | `template/` | Coin Duel: grab the coin first |
 | 2-4 | 4-Player Adapter | `skyhop/` | Sky Hop: climb, the last one on screen wins |
 
+A turn-based game with a lot of thinking per move (a board game) also starts from
+`template/`; `chess/` shows how to spread work that does not fit in one frame over
+several frames, and how to draw a busy screen with a fixed cost per frame.
+
 `python3 tools/new.py <name> "<Title>"` copies `template/`; add `--players 4` (or 3)
 for `skyhop/`. `<name>`: lowercase a-z 0-9 _ -.
 

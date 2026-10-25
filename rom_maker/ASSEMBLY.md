@@ -4,7 +4,8 @@ No C, no compiler: a game is a few `.asm` text files that the RGBDS assembler tu
 a `.gb` ROM, byte for byte what you wrote. That is also what the translator handles best.
 Two complete games are written this way; read the one you start from next to this page:
 [template/](template/) (Coin Duel, two players on the link cable) and
-[skyhop/](skyhop/) (Sky Hop, two to four players on the 4-Player Adapter).
+[skyhop/](skyhop/) (Sky Hop, two to four players on the 4-Player Adapter). A third,
+[chess/](chess/), is a bigger 2-player game on the cable.
 [HARDWARE.md](HARDWARE.md) has the engine's rules.
 
 ## 1. Tools and files
@@ -144,7 +145,11 @@ Both Game Boys run the same ROM on the server. The template's way, which you sho
 2. **Seed**: player 1 sends one random byte; both seed the same generator from it.
 3. **Every frame** (`Exchange`): put your buttons in `SB`; player 1 waits a moment then
    starts the transfer (`SC = $81`), player 2 waits for it (`SC = $80`); when `SC` bit 7
-   is 0, `SB` holds the other player's buttons.
+   is 0, `SB` holds the other player's buttons. If player 2 is not listening yet (its
+   frame ran long), player 1's transfer still ends, with `$FF`, and player 2 gets
+   nothing: player 1 must then send again, or the two Game Boys end up a frame apart and
+   disagree from then on. So never let a pad byte be `$FF`, and have player 1 retry on
+   `$FF` (the template's `Exchange` does both).
 4. **Run the whole game from both inputs**, in the same order, on both Game Boys. Then
    both screens agree without sending any game state.
 

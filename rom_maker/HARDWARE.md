@@ -84,7 +84,9 @@ for free, and a few things to do:
   (player 1) always the master, have the game's `start` script press START on Game Boy 1
   only, as the Tetris and Dr. Mario scripts do.
 - **Link timing:** one byte takes 4096 cycles (just under 1 ms; about 17 bytes a frame).
-  The slave gets its byte and its serial interrupt when the master's transfer ends. If
+  The slave gets its byte and its serial interrupt when the master's transfer ends. A
+  master whose slave is not listening reads `$FF` after those 4096 cycles and the slave
+  gets nothing: retry on `$FF` (see ASSEMBLY.md, the `Exchange` step). If
   both sides start as master at the same moment, the server still swaps the two bytes
   (real hardware would garble them).
 - **Exchange inputs every frame** (cable) or every packet (adapter), and run every

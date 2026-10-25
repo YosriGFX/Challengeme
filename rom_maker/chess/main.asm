@@ -1,15 +1,19 @@
 ; CHESS: two players on the link cable, full rules, a chess clock per player.
 ;
-; - Every legal move: castling, en passant, promotion (always to a queen), no move that
-;   leaves your own king in check.
-; - A game ends by checkmate (a round win), or a draw: stalemate, 50 moves without a
-;   capture or pawn move, or not enough pieces left to mate. Whoever runs out of time
-;   loses, unless the other player cannot mate any more (then it is a draw).
+; - Every legal move: castling, en passant, promotion (the player picks queen, rook,
+;   bishop or knight), no move that leaves your own king in check.
+; - A game ends by checkmate or resignation (a round win), or a draw: stalemate, the same
+;   position a third time, 50 moves without a capture or pawn move, not enough pieces
+;   left to mate, or both players agreeing. Whoever runs out of time loses, unless the
+;   other player cannot mate any more (then it is a draw).
 ; - Colours: the server picks who is white in the first game (a random byte it writes to
 ;   $C003), then the colours swap every game. Each Game Boy shows the board from its own
 ;   player's side.
 ; - Controls: the d-pad moves your cursor, A picks one of your pieces (dots show where
-;   it can go) and A again on a dot moves it; B lets go of the piece.
+;   it can go) and A again on a dot moves it; B lets go of the piece. A pawn reaching
+;   the last rank asks for its new piece: left / right, then A (B takes it back).
+;   SELECT opens the menu: A offers a draw (or takes the other player's offer), B
+;   resigns (A confirms). An offer stands until the other player moves.
 ; - Round wins at $C000 (mine) and $C001 (theirs); the server's choice of round wins for
 ;   the match at $C002. Between games both players press START.
 ;
@@ -22,6 +26,7 @@
 
 INCLUDE "hardware.inc"
 INCLUDE "tiles.asm"
+INCLUDE "zobrist.asm"
 
 DEF WINS_TO_MATCH EQU 1            ; round wins for the match when the server sets none
 DEF CLOCK_MINUTES EQU 5            ; each player's time per game (1-9)
@@ -76,6 +81,7 @@ DEF GEN_WAIT  EQU 0                ; a frame to draw the new position first
 DEF GEN_START EQU 1
 DEF GEN_TEST  EQU 2
 DEF GEN_DONE  EQU 3
+DEF GEN_END   EQU 4                ; the moves are known: is the game over?
 
 ; wReason: how the last game ended
 DEF END_MATE      EQU 1
@@ -83,6 +89,18 @@ DEF END_STALEMATE EQU 2
 DEF END_FIFTY     EQU 3
 DEF END_MATERIAL  EQU 4
 DEF END_TIME      EQU 5
+DEF END_REPEAT    EQU 6            ; the same position a third time
+DEF END_RESIGN    EQU 7
+DEF END_AGREED    EQU 8
+
+; wMenu1 / wMenu2
+DEF MENU_OPEN   EQU 1
+DEF MENU_RESIGN EQU 2              ; "resign?" waiting for A
+
+; Zobrist pages (make_zobrist.py)
+DEF ZOB_EP    EQU 12
+DEF ZOB_MISC  EQU 13               ; castling rights at 4 * rights, black to move at ZOB_BLACK
+DEF ZOB_BLACK EQU 64
 
 DEF QUEUE_LEN EQU 40               ; screen tiles written per frame
 DEF DUMMY_VRAM EQU _SCRN0 + 32 * 20  ; an unseen map row for unused queue entries
@@ -139,6 +157,12 @@ wDiffRow:  db                      ; the screen row BuildQueue compares next
 wSound:    db                      ; sound to play at the end of the frame
 wLoops:    db                      ; frames run (to check none take longer than a frame)
 wEndLY:    db                      ; the line the last frame's work ended on (VBlank 144-153 first)
+wPromo:    db                      ; picking a promotion piece: 1 queen, 2 rook, 3 bishop, 4 knight
+wPromoFrom: db                     ; the pawn's move waiting for that pick
+wPromoTo:  db
+wMenu1:    db                      ; per player: 0, MENU_OPEN or MENU_RESIGN
+wMenu2:    db
+wOffer:    db                      ; the player who offered a draw, 0 = none
 
 DEF PL_FILE EQU 0
 DEF PL_RANK EQU 1
@@ -161,6 +185,11 @@ wQueue: ds QUEUE_LEN * 3           ; VRAM address (little-endian), tile
 
 SECTION "Drawn", WRAM0[$C600]
 wDrawn: ds 120                     ; the board as last drawn into wWant
+
+; The key of every position since the last capture or pawn move (index wHalf): byte k
+; of position i at wHist + k * 128 + i.
+SECTION "History", WRAM0[$C700]
+wHist: ds 4 * 128
 
 ; The screen as it should look (wWant) and as it was sent to VRAM (wShown): 18 rows of
 ; 32 tiles like the map (only 20 are seen), so wWant + i is VRAM $9800 + i and wShown
@@ -190,6 +219,9 @@ hMat:     ds 4                     ; heavy white, minors white, heavy black, min
 hQ:       ds 2                     ; where BuildQueue writes next
 hRows:    db
 hDrawn:   db                       ; squares drawn this frame
+hHash:    ds 4                     ; PositionKey's result
+hKnights: db                       ; Material: knights on the board
+hBishops: db                       ; Material: bit 0 a bishop on a dark square, bit 1 on a light one
 
 ; ---------------------------------------------------------------------------- vectors
 SECTION "VBlank interrupt", ROM0[$40]
@@ -357,26 +389,47 @@ Handshake:
     ld [wSeed + 1], a
     ret
 
-; Swaps this frame's buttons (a) with the other Game Boy's; returns theirs in a.
+; Swaps this frame's buttons (wMyPad) with the other Game Boy's; returns theirs in a.
+; Player 1 clocks the byte; player 2 waits for it. If player 2 is not listening yet (its
+; last frame ran long), player 1's transfer ends with $FF, as on hardware, and player 2
+; gets nothing: so player 1 sends again until a real answer comes. A pad byte is never
+; $FF (pressing everything at once counts as all but A).
 Exchange:
-    ldh [rSB], a
+    ld a, [wMyPad]
+    cp $FF
+    jr nz, .padOk
+    dec a
+    ld [wMyPad], a
+.padOk:
     ld a, [wPlayer]
     cp 1
     jr nz, .slave
-    ld b, 64
+.master:
+    ld b, 64                       ; give player 2 a moment to get ready
 .delay:
     dec b
     jr nz, .delay
+    ld a, [wMyPad]
+    ldh [rSB], a
     ld a, $81
-    jr .go
-.slave:
-    ld a, $80
-.go:
     ldh [rSC], a
-.wait:
+.masterWait:
     ldh a, [rSC]
     bit 7, a
-    jr nz, .wait
+    jr nz, .masterWait
+    ldh a, [rSB]
+    cp $FF                         ; nobody answered: try again
+    jr z, .master
+    ret
+.slave:
+    ld a, [wMyPad]
+    ldh [rSB], a
+    ld a, $80
+    ldh [rSC], a
+.slaveWait:
+    ldh a, [rSC]
+    bit 7, a
+    jr nz, .slaveWait
     ldh a, [rSB]
     ret
 
@@ -472,6 +525,7 @@ NewGame:
     ld [wWinner], a
     ld [wReady1], a
     ld [wReady2], a
+    call ClearAsks
     ld a, CASTLE_WK | CASTLE_WQ | CASTLE_BK | CASTLE_BQ
     ld [wCastle], a
     ld a, SQ_E1
@@ -581,6 +635,33 @@ Input:
     ld d, a                        ; d = held
     and b
     ldh [hNew], a                  ; new presses
+    and PAD_SELECT                 ; SELECT opens or closes the menu
+    jr z, .noSelect
+    push hl
+    call MenuAddr
+    ld a, [hl]
+    and a
+    ld a, MENU_OPEN
+    jr z, .toggle
+    xor a
+.toggle:
+    ld [hl], a
+    pop hl
+    ret
+.noSelect:
+    call MenuOf
+    and a
+    jp nz, MenuInput
+    ld a, [wPromo]                 ; this player picking a promotion piece?
+    and a
+    jr z, .board
+    call ColourOf
+    push hl
+    ld hl, wSide
+    cp [hl]
+    pop hl
+    jp z, PromoInput
+.board:
     ; d-pad, with repeat while held: first after 18 frames, then every 4
     push hl
     inc hl
@@ -655,7 +736,25 @@ Input:
     xor a
     ld [wPl1 + PL_SEL], a
     ld [wPl2 + PL_SEL], a
-    jp MakeMove
+    ld h, HIGH(wBoard)             ; a pawn to the last rank: first pick its new piece
+    ld l, d
+    ld a, [hl]
+    and 7
+    cp PAWN
+    jp nz, MakeMove
+    ld a, e
+    cp SQ_A8
+    jr nc, .promotion
+    cp SQ_H1 + 1
+    jp nc, MakeMove
+.promotion:
+    ld a, d
+    ld [wPromoFrom], a
+    ld a, e
+    ld [wPromoTo], a
+    ld a, 1
+    ld [wPromo], a
+    ret
 .pick:
     ld a, [hl]                     ; A on the selected piece again: let go
     cp e
@@ -676,6 +775,124 @@ Input:
     ret
 .letGo:
     ld [hl], 0
+    ret
+
+; Player c's menu is open: A offers a draw, or agrees to the other player's offer; B
+; asks "resign?", where A resigns and B closes the menu. SELECT closed it (Input).
+MenuInput:
+    call MenuAddr
+    ld a, [hl]
+    cp MENU_RESIGN
+    jr z, .confirm
+    ldh a, [hNew]
+    and PAD_B
+    jr z, .notB
+    ld [hl], MENU_RESIGN
+    ret
+.notB:
+    ldh a, [hNew]
+    and PAD_A
+    ret z
+    ld [hl], 0
+    ld a, [wOffer]
+    and a
+    jr z, .offer
+    cp c
+    ret z                          ; offered already
+    xor a                          ; the other player offered: a draw
+    ld [wWinner], a
+    ld a, END_AGREED
+    ld [wReason], a
+    jp EndGame
+.offer:
+    ld a, c
+    ld [wOffer], a
+    ld a, 3                        ; the other player hears it
+    ld [wSound], a
+    ret
+.confirm:
+    ldh a, [hNew]
+    and PAD_B
+    jr z, .notNo
+    ld [hl], 0
+    ret
+.notNo:
+    ldh a, [hNew]
+    and PAD_A
+    ret z
+    ld [hl], 0
+    ld a, c                        ; resigned: the other player wins
+    xor 3
+    ld [wWinner], a
+    ld a, END_RESIGN
+    ld [wReason], a
+    jp EndGame
+
+; The side to move (player c) picks its pawn's new piece: left / right change it, A
+; makes the move, B takes the pawn back.
+PromoInput:
+    ldh a, [hNew]
+    and PAD_B
+    jr z, .notB
+    xor a
+    ld [wPromo], a
+    ret
+.notB:
+    ldh a, [hNew]
+    and PAD_A
+    jr z, .notA
+    ld a, [wPromoFrom]
+    ld d, a
+    ld a, [wPromoTo]
+    ld e, a
+    jp MakeMove
+.notA:
+    ldh a, [hNew]
+    and PAD_RIGHT
+    jr z, .notRight
+    ld a, [wPromo]
+    inc a
+    cp 5
+    jr c, .set
+    ld a, 1
+.set:
+    ld [wPromo], a
+    ret
+.notRight:
+    ldh a, [hNew]
+    and PAD_LEFT
+    ret z
+    ld a, [wPromo]
+    dec a
+    jr nz, .set
+    ld a, 4
+    jr .set
+
+; hl = player c's menu state (wMenu1 / wMenu2). Keeps bc, de.
+MenuAddr:
+    ld hl, wMenu1
+    ld a, c
+    cp 1
+    ret z
+    inc hl
+    ret
+
+; a = player c's menu state. Keeps bc, de, hl.
+MenuOf:
+    ld a, c
+    cp 1
+    ld a, [wMenu1]
+    ret z
+    ld a, [wMenu2]
+    ret
+
+; No menu open, no draw offer, no promotion being picked.
+ClearAsks:
+    xor a
+    ld [wMenu1], a
+    ld [wMenu2], a
+    ld [wOffer], a
+    ld [wPromo], a
     ret
 
 ; Moves the cursor of the struct at hl by the d-pad bits in hMove, from that player's
@@ -829,7 +1046,8 @@ Tick:
     jp EndGame
 
 ; Counts pieces into hMat: for white then black, "heavy" pieces (pawns, rooks, queens)
-; and minor pieces (knights, bishops).
+; and minor pieces (knights, bishops). Also all knights (hKnights) and the colours of
+; the bishops' squares (hBishops).
 Material:
     xor a
     ld hl, hMat
@@ -837,6 +1055,8 @@ Material:
     ld [hl+], a
     ld [hl+], a
     ld [hl], a
+    ldh [hKnights], a
+    ldh [hBishops], a
     ld d, HIGH(wBoard)
     ld e, SQ_A1
 .loop:
@@ -853,13 +1073,30 @@ Material:
 .white:
     and 7
     cp KNIGHT
-    jr z, .minor
+    jr z, .knight
     cp BISHOP
-    jr z, .minor
+    jr z, .bishop
     cp KING
     jr z, .next
     inc [hl]                       ; heavy
     jr .next
+.knight:
+    ldh a, [hKnights]
+    inc a
+    ldh [hKnights], a
+    jr .minor
+.bishop:
+    push hl
+    ld h, HIGH(SquareKey)
+    ld l, e
+    ld a, [hl]
+    and 1                          ; the square's colour: 1 light
+    inc a
+    ld l, a
+    ldh a, [hBishops]
+    or l
+    ldh [hBishops], a
+    pop hl
 .minor:
     inc hl
     inc [hl]
@@ -873,7 +1110,7 @@ Material:
 ; The game is over: wReason and wWinner say how. Counts the win and waits for START
 ; (or ends the match).
 EndGame:
-    xor a
+    call ClearAsks
     ld [wReady1], a
     ld [wReady2], a
     ld [wPl1 + PL_SEL], a
@@ -946,7 +1183,8 @@ SetResults:
 ; ---------------------------------------------------------------------------- moves
 ; Finds the legal moves of the side to move over a few frames: first every
 ; pseudo-legal move (GenPseudo), then TESTS_PER_FRAME of them per frame are kept if they
-; do not leave the king in check. Then decides whether the game is over.
+; do not leave the king in check. Then, in a frame of its own, decides whether the game
+; is over (EndChecks).
 GenStep:
     ld a, [wGenState]
     cp GEN_WAIT
@@ -974,6 +1212,8 @@ GenStep:
     ld [wInCheck], a
     ret
 .test:
+    cp GEN_END
+    jp z, EndChecks
     cp GEN_TEST
     ret nz
     ld b, TESTS_PER_FRAME          ; full tests this frame
@@ -1040,8 +1280,13 @@ GenStep:
     jr nz, .loop
     ret
 .done:
-    ld a, GEN_DONE
+    ld a, GEN_END
     ld [wGenState], a
+    ret
+
+; The legal moves are known: checkmate, stalemate, 50 moves, a third repetition, or
+; not enough pieces to mate end the game; otherwise the side to move may move.
+EndChecks:
     ld a, [wInCheck]
     and a
     jr z, .noCheck
@@ -1067,8 +1312,13 @@ GenStep:
 .moves:
     ld a, [wHalf]                  ; 50 moves each without a capture or pawn move
     cp 100
-    jr c, .material
+    jr c, .repeat
     ld a, END_FIFTY
+    jr .draw
+.repeat:
+    call Repetition
+    jr nc, .material
+    ld a, END_REPEAT
     jr .draw
 .material:
     call Material                  ; neither side can mate any more?
@@ -1076,19 +1326,198 @@ GenStep:
     ld b, a
     ld a, [hMat + 2]
     or b
-    ret nz                         ; pawns, rooks or queens left
+    jr nz, .goOn                   ; pawns, rooks or queens left
     ld a, [hMat + 1]
     ld b, a
     ld a, [hMat + 3]
     add b
     cp 2
-    ret nc                         ; two or more minor pieces left
+    jr c, .dead                    ; a lone king, or one minor piece
+    ldh a, [hKnights]              ; or only bishops, all on one colour of square
+    and a
+    jr nz, .goOn
+    ldh a, [hBishops]
+    cp 3
+    jr z, .goOn
+.dead:
     ld a, END_MATERIAL
 .draw:
     ld [wReason], a
     xor a
     ld [wWinner], a
     jp EndGame
+.goOn:
+    ld a, GEN_DONE                 ; the side to move may move
+    ld [wGenState], a
+    ret
+
+; Carry set if this position has been seen twice before (the same pieces on the same
+; squares, side to move, castling rights and en passant). Only positions since the last
+; capture or pawn move can repeat: their keys are in wHist, this one's goes at wHalf.
+Repetition:
+    call PositionKey
+    ld a, [wHalf]
+    ld c, a
+    ld h, HIGH(wHist)
+    ld l, c
+    ldh a, [hHash]
+    ld [hl], a
+    set 7, l
+    ldh a, [hHash + 1]
+    ld [hl], a
+    inc h
+    res 7, l
+    ldh a, [hHash + 2]
+    ld [hl], a
+    set 7, l
+    ldh a, [hHash + 3]
+    ld [hl], a
+    ld b, 0                        ; earlier positions with the same side to move: equal?
+.loop:
+    ld a, c
+    sub 2
+    jr c, .no
+    ld c, a
+    ld h, HIGH(wHist)
+    ld l, c
+    ldh a, [hHash]
+    cp [hl]
+    jr nz, .loop
+    set 7, l
+    ldh a, [hHash + 1]
+    cp [hl]
+    jr nz, .loop
+    inc h
+    res 7, l
+    ldh a, [hHash + 2]
+    cp [hl]
+    jr nz, .loop
+    set 7, l
+    ldh a, [hHash + 3]
+    cp [hl]
+    jr nz, .loop
+    inc b
+    ld a, b
+    cp 2
+    jr c, .loop
+    scf
+    ret
+.no:
+    and a
+    ret
+
+; hHash = the position's Zobrist key (make_zobrist.py): each piece on its square, the
+; castling rights, black to move, and the en passant square only when a pawn can really
+; take there (so the legal moves must be known).
+PositionKey:
+    xor a
+    ldh [hHash], a
+    ldh [hHash + 1], a
+    ldh [hHash + 2], a
+    ldh [hHash + 3], a
+    ld c, SQ_A1
+.square:
+    ld h, HIGH(wBoard)
+    ld l, c
+    ld a, [hl]
+    and a
+    jr z, .next
+    cp OFF
+    jr z, .next
+    ld b, a
+    and 7                          ; page: white pawn 0 ... king 5, black pawn 6 ... king 11
+    dec a
+    bit 3, b
+    jr z, .white
+    add 6
+.white:
+    add HIGH(Zobrist)
+    ld b, a
+    ld h, HIGH(SquareKey)
+    ld a, [hl]
+    and $FC
+    ld l, a
+    ld h, b
+    call XorKey
+.next:
+    inc c
+    ld a, c
+    cp SQ_H8 + 1
+    jr c, .square
+    ld a, [wCastle]
+    add a
+    add a
+    ld l, a
+    ld h, HIGH(Zobrist) + ZOB_MISC
+    call XorKey
+    ld a, [wSide]
+    and a
+    jr z, .ep
+    ld hl, Zobrist + ZOB_MISC * 256 + ZOB_BLACK
+    call XorKey
+.ep:
+    call RealEp
+    ret z
+    ld a, [wEp]
+    ld l, a
+    ld h, HIGH(SquareKey)
+    ld a, [hl]
+    and $FC
+    ld l, a
+    ld h, HIGH(Zobrist) + ZOB_EP
+    ; fall through
+
+; hHash ^= the 4 bytes at hl (in one page). Keeps bc, de.
+XorKey:
+    ldh a, [hHash]
+    xor [hl]
+    ldh [hHash], a
+    inc l
+    ldh a, [hHash + 1]
+    xor [hl]
+    ldh [hHash + 1], a
+    inc l
+    ldh a, [hHash + 2]
+    xor [hl]
+    ldh [hHash + 2], a
+    inc l
+    ldh a, [hHash + 3]
+    xor [hl]
+    ldh [hHash + 3], a
+    ret
+
+; NZ if a pawn can really take en passant: a legal pawn move to wEp.
+RealEp:
+    ld a, [wEp]
+    and a
+    ret z
+    ld e, a
+    ld a, [wCount]
+    and a
+    ret z
+    ld b, a
+    ld c, 0
+.loop:
+    ld h, HIGH(wTo)
+    ld l, c
+    ld a, [hl]
+    cp e
+    jr nz, .next
+    ld h, HIGH(wFrom)
+    ld l, [hl]
+    ld h, HIGH(wBoard)
+    ld a, [hl]
+    and 7
+    cp PAWN
+    jr nz, .next
+    and a                          ; NZ
+    ret
+.next:
+    inc c
+    dec b
+    jr nz, .loop
+    xor a
+    ret
 
 ; Every pseudo-legal move of the side to move into wFrom/wTo (count in wPseudo).
 GenPseudo:
@@ -1606,7 +2035,8 @@ IsAttacked:
     ret
 
 ; Plays d -> e on the board for real (a legal move): captures, en passant, castling's
-; rook, promotion to a queen, castling rights, the 50-move count; then the other side.
+; rook, promotion (to wPromo's piece, a queen if none), castling rights, the 50-move
+; count, the draw offer; then the other side.
 MakeMove:
     ld h, HIGH(wBoard)
     ld l, d
@@ -1701,8 +2131,8 @@ MakeMove:
     inc l
     ld [hl], a
 .notKing:
-    ld a, b                        ; promotion: a pawn on the last rank is a queen
-    and 7
+    ld a, b                        ; promotion: a pawn on the last rank becomes the
+    and 7                          ; piece picked
     cp PAWN
     jr nz, .place
     ld a, e
@@ -1711,9 +2141,18 @@ MakeMove:
     cp SQ_H1 + 1
     jr nc, .place
 .promote:
+    ld a, [wPromo]
+    and a
+    jr nz, .picked
+    inc a
+.picked:
+    ld l, a                        ; 1 queen, 2 rook, 3 bishop, 4 knight = 6 - type
+    ld a, 6
+    sub l
+    ld l, a
     ld a, b
     and BLACK
-    or QUEEN
+    or l
     ld b, a
 .place:
     ld l, e
@@ -1735,6 +2174,17 @@ MakeMove:
     dec a
 .sound:
     ld [wSound], a
+    xor a
+    ld [wPromo], a
+    ld a, [wSide]                  ; a move by the player offered a draw turns it down
+    call PlayerOf
+    ld l, a
+    ld a, [wOffer]
+    cp l
+    jr z, .offerStands
+    xor a
+    ld [wOffer], a
+.offerStands:
     ld a, [wSide]
     xor BLACK
     ld [wSide], a
@@ -1803,6 +2253,20 @@ FOR I, 256
     ENDC
     IF DIST % 9 == 0 || DIST % 10 == 0 || DIST % 11 == 0 || DIST <= 7
         db 1
+    ELSE
+        db 0
+    ENDC
+ENDR
+
+; SquareKey[square]: 4 * its number a1 = 0 ... h8 = 63 (a Zobrist page offset), plus 1
+; on a light square (bits 0-1 are free for it). 0 off the board.
+SECTION "Square keys", ROM0, ALIGN[8]
+SquareKey:
+FOR SQ, 120
+    REDEF SQF = (SQ - 21) % 10
+    REDEF SQR = (SQ - 21) / 10
+    IF SQ >= 21 && SQ <= 98 && SQF < 8
+        db (SQF + 8 * SQR) * 4 + ((SQF + SQR) & 1)
     ELSE
         db 0
     ENDC
@@ -2005,6 +2469,15 @@ RenderText:
     ld de, TextMaterial
     cp END_MATERIAL
     jr z, .reason
+    ld de, TextRepeat
+    cp END_REPEAT
+    jr z, .reason
+    ld de, TextResigned
+    cp END_RESIGN
+    jr z, .reason
+    ld de, TextAgreed
+    cp END_AGREED
+    jr z, .reason
     ld de, TextTime
 .reason:
     call PutText
@@ -2027,13 +2500,7 @@ RenderText:
     ld a, [wPhase]
     cp PHASE_PLAY
     jr nz, .notPlay
-    ld a, [wMyColor]
-    and a
-    ld de, TextYouWhite
-    jr z, .hint
-    ld de, TextYouBlack
-.hint:
-    call PutText
+    call PutHint
     jr .panel
 .notPlay:
     cp PHASE_WAIT
@@ -2080,6 +2547,66 @@ RenderText:
     call PutClock
     ld hl, wWant + 15 * 32 + 17
     jp PutKing
+
+; The bottom line while playing (hl): this player's menu, the promotion pick, a draw
+; offer, or else which colour they play, taking turns with how to open the menu.
+PutHint:
+    ld a, [wPlayer]
+    ld c, a
+    call MenuOf
+    cp MENU_RESIGN
+    ld de, TextConfirm
+    jp z, PutText
+    and a
+    ld de, TextMenu
+    jp nz, PutText
+    ld a, [wPromo]
+    and a
+    jr z, .offer
+    ld a, [wSide]
+    ld b, a
+    ld a, [wMyColor]
+    cp b
+    jr nz, .offer
+    ld de, TextPromote
+    call PutText
+    ld a, [wPromo]                 ; its name
+    dec a
+    add a
+    add LOW(PromoNames)
+    ld e, a
+    adc HIGH(PromoNames)
+    sub e
+    ld d, a
+    ld a, [de]
+    ld b, a
+    inc de
+    ld a, [de]
+    ld d, a
+    ld e, b
+    call PutText
+    ld de, TextPromoEnd
+    jp PutText
+.offer:
+    ld a, [wOffer]
+    and a
+    jr z, .colour
+    cp c
+    ld de, TextDrawSent
+    jp z, PutText
+    ld de, TextDrawOffered
+    jp PutText
+.colour:
+    ld a, [wLoops]
+    bit 7, a
+    ld de, TextMenuHint
+    jp nz, PutText
+    ld a, [wMyColor]
+    and a
+    ld de, TextYouWhite
+    jp z, PutText
+    ld de, TextYouBlack
+    jp PutText
 
 ; Player c's king (in their colour) as 2 x 2 tiles at hl.
 PutKing:
@@ -2229,6 +2756,9 @@ TextStalemate:  db "STALEMATE", EOS
 TextFifty:      db "50 MOVES", EOS
 TextMaterial:   db "NO MATE", EOS
 TextTime:       db "TIME OUT", EOS
+TextRepeat:     db "REPETITION", EOS
+TextResigned:   db "RESIGNED", EOS
+TextAgreed:     db "AGREED", EOS
 TextWin:        db " - YOU WIN", EOS
 TextLose:       db " - YOU LOSE", EOS
 TextDraw:       db " - DRAW", EOS
@@ -2238,6 +2768,18 @@ TextPressStart: db "    PRESS START", EOS
 TextMatchWon:   db "  YOU WON THE MATCH", EOS
 TextMatchLost:  db " YOU LOST THE MATCH", EOS
 TextWins:       db "WINS", EOS
+TextConfirm:    db " RESIGN? A:YES B:NO", EOS
+TextMenu:       db " A:DRAW   B:RESIGN", EOS
+TextMenuHint:   db " SELECT: DRAW/RESIGN", EOS
+TextDrawSent:   db " DRAW OFFERED", EOS
+TextDrawOffered: db " DRAW? PRESS SELECT", EOS
+TextPromote:    db " PROMOTE: < ", EOS
+TextPromoEnd:   db " >", EOS
+TextQueen:      db "QUEEN", EOS
+TextRook:       db "ROOK", EOS
+TextBishop:     db "BISHOP", EOS
+TextKnight:     db "KNIGHT", EOS
+PromoNames:     dw TextQueen, TextRook, TextBishop, TextKnight
 
 ; Sprites: this player's cursor (while playing), the piece they picked and the dots
 ; where it can go (on their turn), and the last move's two marks.
