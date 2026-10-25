@@ -139,7 +139,6 @@ wDiffRow:  db                      ; the screen row BuildQueue compares next
 wSound:    db                      ; sound to play at the end of the frame
 wLoops:    db                      ; frames run (to check none take longer than a frame)
 wEndLY:    db                      ; the line the last frame's work ended on (VBlank 144-153 first)
-wLYs:      ds 8
 
 DEF PL_FILE EQU 0
 DEF PL_RANK EQU 1
@@ -276,17 +275,9 @@ MainLoop:
     ld a, b
     ld [wPad1], a
 .update:
-    ldh a, [rLY]
-    ld [wLYs], a
     call Update
-    ldh a, [rLY]
-    ld [wLYs + 1], a
     call Render
-    ldh a, [rLY]
-    ld [wLYs + 2], a
     call BuildQueue
-    ldh a, [rLY]
-    ld [wLYs + 3], a
     call PlaySound
     ld a, [wPad1]
     ld [wLast1], a
@@ -1838,13 +1829,9 @@ StartBoard:
 ; (king, clock, wins, OK), this player at the bottom. And the sprites in wOAM.
 Render:
     call RenderBoard
-    ldh a, [rLY]
-    ld [wLYs + 4], a
     ld a, [wLoops]                 ; the words and clocks: every 4th frame is enough
     and 3
     call z, RenderText
-    ldh a, [rLY]
-    ld [wLYs + 5], a
     jp RenderSprites
 
 ; Draws the squares that changed since they were last drawn (DRAWS_PER_FRAME at most;

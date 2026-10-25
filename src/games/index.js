@@ -2,11 +2,12 @@
 // WebAssembly from bytes). They never reach a browser: players only get pixels.
 //
 // Only games for two players or more whose result the server reads (round wins, so the
-// match time limit works too). coinduel and skyhop are our own homebrew ROMs
-// (rom_maker/template and rom_maker/skyhop); tetris and drmario are translated from the
+// match time limit works too). chess, coinduel and skyhop are our own homebrew ROMs
+// (rom_maker/chess, rom_maker/template and rom_maker/skyhop); tetris and drmario are translated from the
 // owner's cartridge ROMs (only the .wasm is here, not the ROM). More games can be added on
 // one machine with `python -m tools.add_game <rom.gb> <id> "<title>"`, which writes them
 // to ./local/ and ./local.js; neither is committed. See TRANSLATOR.md.
+import chess from "./chess.wasm";
 import coinduel from "./coinduel.wasm";
 import drmario from "./drmario.wasm";
 import local from "./local.js";
@@ -39,6 +40,10 @@ import tetris from "./tetris.wasm";
 // by a link cable, more by the 4-Player Adapter; `link: "adapter"` uses the adapter for
 // two as well (games written for it, like Sky Hop).
 const BUILT_IN = [
+  { id: "chess", title: "Chess (2 players)", module: chess, shared: true, seedAt: 0xc003,
+    result: { wins: 0xc000, theirs: 0xc001, best: 1, bestAt: 0xc002, bestChoices: [1, 2, 3, 5] },
+    // START on player 1 makes the handshake; seedAt picks who plays white
+    start: { frames: 30, inputs: [[10, 0x80, 0], [16, 0, 0]] } },
   { id: "skyhop", title: "Sky Hop (2-4 players)", module: skyhop, players: 4, minPlayers: 2, link: "adapter", shared: true,
     result: { winsBy: 0xc000, best: 3, bestAt: 0xc004, bestChoices: [1, 2, 3, 4, 5, 7, 9] },
     // START on player 1 starts the game on the adapter

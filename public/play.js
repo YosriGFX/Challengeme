@@ -151,6 +151,7 @@ function showLobby({ phase: next, online, ready, played, pause }) {
   const here = online.filter(Boolean).length;
   peer.textContent = online.length > 2 ? `${here} of ${online.length} online`
     : online[1 - me] ? "2 players" : "waiting for the other player";
+  peer.hidden = next === "playing" && here === online.length;   // room in the header for the match clock
   let title, hint;
   clearInterval(countdown);
   if (next === "paused" && pause) {
