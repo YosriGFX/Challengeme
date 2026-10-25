@@ -11,6 +11,9 @@ let choose = (p, slots, legal) => legal[Math.floor(random() * legal.length)];
 const plan = {};                     // per player (0-3): { bits: [...] } presses still to make
 const busy = [0, 0, 0, 0];           // frame each player may press again
 
+// How often, per look, a player calls capot, contre or surcontre, and passes on their turn.
+export const odds = { capot: 0.0004, contre: 0.004, surcontre: 0.01, pass: 0.55 };
+
 export function seedBot(n) { seed = n >>> 0 || 1; }
 export function setChooser(fn) { choose = fn; }
 export { random };
@@ -87,15 +90,20 @@ export default function bot({ frame, ram, press }) {
 }
 
 function bidChoice(v, p) {
-  if (random() < 0.0004) return 0x80;                                   // capot, any time
+  if (random() < odds.capot) return 0x80;                               // capot, any time
   const opponent = v.bid && v.bidder !== 0xff && ((v.bidder ^ p) & 1) === 1;
-  if (v.state === ST.BID && opponent && v.bid < CAPOT && !v.coinche && random() < 0.004) return 0x40;
-  if (v.state === ST.CONTRE) return !opponent && random() < 0.01 ? 0x40 : 0;
+  if (v.state === ST.BID && opponent && v.bid < CAPOT && !v.coinche && random() < odds.contre) return 0x40;
+  if (v.state === ST.CONTRE) return !opponent && random() < odds.surcontre ? 0x40 : 0;
   if (v.turn !== p || random() < 0.9) return 0;                         // take a moment
+  // the suit this hand is best in as trump: trump points, and 10 a card
+  const strength = [0, 1, 2, 3].map((s) => v.hands[p].filter((c) => suit(c) === s)
+    .reduce((sum, c) => sum + 10 + [0, 0, 14, 10, 20, 3, 4, 11][rank(c)], 0));
+  const best = strength.indexOf(Math.max(...strength));
   const top = Math.max(9, v.bid + 1);
-  if (top > 16 || random() < 0.55) return 0x20;                         // pass
-  const value = top + Math.floor(random() * Math.min(3, 17 - top));
-  plan[p] = bidPresses(v.selV[p], v.selS[p], value, Math.floor(random() * 4));
+  const worth = 7 + Math.floor(strength[best] / 12);                    // what the hand might make, in tens
+  if (top > 16 || top > worth + 1 || random() < odds.pass) return 0x20;  // pass
+  const value = top + Math.floor(random() * Math.min(2, 17 - top));
+  plan[p] = bidPresses(v.selV[p], v.selS[p], value, best);
   plan[p].state = v.state;
   return plan[p].shift();
 }

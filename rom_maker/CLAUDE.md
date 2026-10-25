@@ -19,7 +19,8 @@ are played for money, so fairness and the server knowing who won matter.
 A turn-based game with a lot of thinking per move (a board game) also starts from
 `template/`; `chess/` shows how to spread work that does not fit in one frame over
 several frames, and how to draw a busy screen with a fixed cost per frame; `dama/` does
-the same for a depth-first search (the longest capture) one piece per frame.
+the same for a depth-first search (the longest capture) one piece per frame. A card
+game for 4 (hidden hands, fair deals, teams) starts from `belote/`.
 
 `python3 tools/new.py <name> "<Title>"` copies `template/`; add `--players 4` (or 3)
 for `skyhop/`. `<name>`: lowercase a-z 0-9 _ -.
@@ -66,7 +67,8 @@ seen screenshots of the start, play, the end of a round and the end of the match
   frame counts for game decisions once the game runs.
 - **Fair**: the same randomness for everybody (shared seed, or button bytes mixed into
   the generator), no advantage for any player number. Everybody sees every screen, so no
-  hidden information.
+  hidden information, unless the game is a card game built like `belote/` (`secret`,
+  `random` and `teams` in ASSEMBLY.md section 10).
 - **Results are required** (ASSEMBLY.md section 10): the server only offers games that
   report their winner, and it uses the round wins for the match time limit too (when
   time is up, most round wins takes the match). Round wins at fixed RAM addresses, +1 per round;

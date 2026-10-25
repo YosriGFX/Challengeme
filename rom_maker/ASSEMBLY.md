@@ -5,7 +5,8 @@ a `.gb` ROM, byte for byte what you wrote. That is also what the translator hand
 Two complete games are written this way; read the one you start from next to this page:
 [template/](template/) (Coin Duel, two players on the link cable) and
 [skyhop/](skyhop/) (Sky Hop, two to four players on the 4-Player Adapter). Two bigger
-2-player games on the cable are [chess/](chess/) and [dama/](dama/).
+2-player games on the cable are [chess/](chess/) and [dama/](dama/); [belote/](belote/) is a
+card game for four on the adapter, with hidden hands.
 [HARDWARE.md](HARDWARE.md) has the engine's rules.
 
 ## 1. Tools and files
@@ -228,6 +229,30 @@ the match picks), `inputs` rows have one button byte per player.
 
 Add `"shared": true` to `game.json` when every player is visible on each Game Boy's own
 screen (Coin Duel, Sky Hop): phones then start with the other players' screens hidden.
+
+**Hidden cards (Belote).** A game with hidden information needs three more things in
+`game.json`, all in [belote/](belote/):
+
+```json
+{
+  "secret": true,
+  "random": { "ask": 49157, "at": 49344, "bytes": 64 },
+  "teams": [[1, 3], [2, 4]]
+}
+```
+
+- `secret`: each phone gets only its own Game Boy's screen (no "Show other"). Draw a
+  player's hand only on their own Game Boy (`wMe`); every Game Boy still knows every hand.
+- `random`: fresh random bytes for every deal, so nobody can work out a hand from cards
+  seen before (one seed for the whole match would allow that). To ask, the game writes a
+  new non-zero request number at `ask` (count up, skip 0); once every Game Boy shows the
+  same new number, the server writes `bytes` crypto-random bytes at `at` on all of them,
+  once, before the next frame. Use them a fixed number of ticks after asking (Belote: 30),
+  never "as soon as they change": adapter packets drift against frames, so Game Boys see
+  the new bytes on different ticks. Shuffle without bias (skip bytes that would favour
+  some cards: `RandBelow` in belote/game.asm).
+- `teams` (with `winsBy`): players who win together. Give teammates the same round wins;
+  the phones show a team's win to both, and a team takes the match.
 
 After each round, put the players back at their start and wait until **every** player
 has pressed START (a new press, not one held from before) before the next round begins;

@@ -4,12 +4,19 @@
 ; which sounds to play.
 
 Tick:
+    ld a, 1
+    ld [wBusy], a
+    call TickState
+    xor a
+    ld [wBusy], a
     ld hl, wTicks
     inc [hl]
-    jr nz, .counted
+    ret nz
     inc hl
     inc [hl]
-.counted:
+    ret
+
+TickState:
     call NewPresses
     ld a, [wState]
     cp ST_LINK

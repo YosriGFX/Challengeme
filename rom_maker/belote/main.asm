@@ -117,6 +117,7 @@ wPackets:  ds 8 * 4                ; 8 packets of 4 button bytes
 SECTION "Game", WRAM0[$C300]
 wState:    db
 wTicks:    dw                      ; ticks run (for tests: Game Boys at the same tick agree)
+wBusy:     db                      ; 1 during a tick (for tests)
 wMe:       db                      ; my player, 0-3 (the only state that differs)
 wIn:       ds 4                    ; this tick's buttons of each player
 wPrev:     ds 4                    ; last tick's
