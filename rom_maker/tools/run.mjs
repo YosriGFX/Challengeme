@@ -22,6 +22,8 @@
 //           ADDR on). With --best, the run stops once the match is decided.
 // --bestAt=ADDR --pokeAt=FRAME: writes --best there on every Game Boy at that frame, as
 //           the server does after the start script.
+// --seedAt=ADDR: writes two random bytes there on every Game Boy at --pokeAt, as the
+//           server does (game.json "seedAt"); --seed=N makes them the same every run.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { pathToFileURL } from "node:url";
@@ -39,6 +41,9 @@ const shots = new Set((args.shots ?? "").split(",").filter(Boolean).map(Number))
 const out = args.out ?? "shot";
 const [winsAt, theirsAt] = (args.wins ?? "").split(":").map(hex);
 const winsBy = hex(args.winsBy), best = Number(args.best ?? 0), bestAt = hex(args.bestAt), pokeAt = Number(args.pokeAt ?? 0);
+const seedAt = hex(args.seedAt);
+const seedBytes = args.seed === undefined ? [Math.random() * 256, Math.random() * 256].map(Math.floor)
+  : [Number(args.seed) & 0xff, (Number(args.seed) >> 8) & 0xff];
 
 const symFile = args.sym ?? file.replace(/\.wasm$/, ".sym");
 const sym = existsSync(symFile) ? Object.fromEntries(readFileSync(symFile, "utf8").split("\n")
@@ -79,6 +84,7 @@ function wins() {
 for (let f = 0; f <= frames; f++) {
   for (const [at, ...bits] of script) if (at === f) gbs.forEach((m, i) => { m.buttons = bits[i] ?? 0; });
   if (bestAt !== undefined && best && f === pokeAt) gbs.forEach((m) => { m.u8[bestAt] = best; });
+  if (seedAt !== undefined && f === pokeAt) gbs.forEach((m) => { m.u8[seedAt] = seedBytes[0]; m.u8[seedAt + 1] = seedBytes[1]; });
   if (bot) bot({ frame: f, gbs, ram, press, players });
   if (shots.has(f)) savePng(`${out}_${f}.png`);
   const w = wins();

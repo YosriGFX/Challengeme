@@ -26,7 +26,8 @@ INCLUDE "tiles.asm"
 DEF WINS_TO_MATCH EQU 1            ; round wins for the match when the server sets none
 DEF CLOCK_MINUTES EQU 5            ; each player's time per game (1-9)
 DEF INTRO_FRAMES  EQU 90           ; after the handshake, before the first game
-DEF TESTS_PER_FRAME EQU 5          ; moves checked for legality per frame
+DEF TESTS_PER_FRAME EQU 2          ; moves fully checked for legality per frame
+DEF MOVES_PER_FRAME EQU 16         ; moves looked at per frame
 DEF HELLO         EQU $A5
 
 ; Pieces on the board: type in bits 0-2, BLACK for black. OFF marks the border.
@@ -85,7 +86,8 @@ DEF END_TIME      EQU 5
 
 DEF QUEUE_LEN EQU 40               ; screen tiles written per frame
 DEF DUMMY_VRAM EQU _SCRN0 + 32 * 20  ; an unseen map row for unused queue entries
-DEF DIFF_PER_FRAME EQU 192         ; screen bytes compared per frame (3 frames for all)
+DEF DIFF_ROWS EQU 4                ; screen rows compared per frame (all 18 in 5 frames)
+DEF DRAWS_PER_FRAME EQU 16         ; board squares drawn per frame at most
 DEF SCREEN_SIZE EQU 32 * 18        ; wWant and wShown are laid out like the map
 
 ; ---------------------------------------------------------------------------- RAM
@@ -133,8 +135,11 @@ wLastFrom: db                      ; the last move, for the marks
 wLastTo:   db
 wBoardDirty: db
 wMyColor:  db                      ; this Game Boy's colour: 0 or BLACK (the board's side)
-wDiffPos:  dw                      ; where BuildQueue goes on comparing the screens
+wDiffRow:  db                      ; the screen row BuildQueue compares next
 wSound:    db                      ; sound to play at the end of the frame
+wLoops:    db                      ; frames run (to check none take longer than a frame)
+wEndLY:    db                      ; the line the last frame's work ended on (VBlank 144-153 first)
+wLYs:      ds 8
 
 DEF PL_FILE EQU 0
 DEF PL_RANK EQU 1
@@ -154,6 +159,9 @@ wTo:   ds 256
 
 SECTION "Queue", WRAM0[$C500]
 wQueue: ds QUEUE_LEN * 3           ; VRAM address (little-endian), tile
+
+SECTION "Drawn", WRAM0[$C600]
+wDrawn: ds 120                     ; the board as last drawn into wWant
 
 ; The screen as it should look (wWant) and as it was sent to VRAM (wShown): 18 rows of
 ; 32 tiles like the map (only 20 are seen), so wWant + i is VRAM $9800 + i and wShown
@@ -180,6 +188,9 @@ hRowStep: db
 hNew:     db
 hMove:    db
 hMat:     ds 4                     ; heavy white, minors white, heavy black, minors black
+hQ:       ds 2                     ; where BuildQueue writes next
+hRows:    db
+hDrawn:   db                       ; squares drawn this frame
 
 ; ---------------------------------------------------------------------------- vectors
 SECTION "VBlank interrupt", ROM0[$40]
@@ -245,7 +256,9 @@ Start:
 MainLoop:
     halt                           ; wait for the next frame
     nop
-    call Draw                      ; in VBlank, the same time on both Game Boys
+    call Draw
+    ld hl, wLoops
+    inc [hl]                      ; in VBlank, the same time on both Game Boys
     call ReadJoypad
     ld [wMyPad], a
     call Exchange                  ; a = the other player's buttons
@@ -263,14 +276,24 @@ MainLoop:
     ld a, b
     ld [wPad1], a
 .update:
+    ldh a, [rLY]
+    ld [wLYs], a
     call Update
+    ldh a, [rLY]
+    ld [wLYs + 1], a
     call Render
+    ldh a, [rLY]
+    ld [wLYs + 2], a
     call BuildQueue
+    ldh a, [rLY]
+    ld [wLYs + 3], a
     call PlaySound
     ld a, [wPad1]
     ld [wLast1], a
     ld a, [wPad2]
     ld [wLast2], a
+    ldh a, [rLY]
+    ld [wEndLY], a
     jr MainLoop
 
 ; ---------------------------------------------------------------------------- link
@@ -483,6 +506,10 @@ NewGame:
     ld a, BLACK
 .white:
     ld [wMyColor], a
+    ld hl, wDrawn                  ; draw every square again
+    ld bc, 120
+    ld a, $FE
+    call Fill
     ld a, 1
     ld [wBoardDirty], a
     ld a, GEN_WAIT
@@ -887,6 +914,15 @@ EndGame:
     ld [wPhase], a
     ret
 
+; a = the side to move's king square. Keeps bc, de, hl.
+KingSquare:
+    ld a, [wSide]
+    and a
+    ld a, [wKingW]
+    ret z
+    ld a, [wKingB]
+    ret
+
 ; a = round wins that win the match: the server's choice, or WINS_TO_MATCH.
 Best:
     ld a, [wBest]
@@ -936,11 +972,21 @@ GenStep:
     ld [wCount], a
     ld a, GEN_TEST
     ld [wGenState], a
+    call KingSquare                ; in check?
+    ld c, a
+    ld a, [wSide]
+    xor BLACK
+    ld b, a
+    call IsAttacked
+    ld a, 0
+    rla
+    ld [wInCheck], a
     ret
 .test:
     cp GEN_TEST
     ret nz
-    ld b, TESTS_PER_FRAME
+    ld b, TESTS_PER_FRAME          ; full tests this frame
+    ld c, MOVES_PER_FRAME          ; moves looked at this frame
 .loop:
     ld a, [wGenIdx]
     ld hl, wPseudo
@@ -953,10 +999,37 @@ GenStep:
     ld e, [hl]
     inc a
     ld [wGenIdx], a
+    ; Most moves need no test: not in check, not the king, not en passant, and the
+    ; piece is not on a line with its king (so moving it cannot uncover a check).
+    ld a, [wInCheck]
+    and a
+    jr nz, .full
+    ld h, HIGH(wBoard)
+    ld l, d
+    ld a, [hl]
+    and 7
+    cp KING
+    jr z, .full
+    cp PAWN
+    jr nz, .line
+    ld a, [wEp]
+    cp e
+    jr z, .full
+.line:
+    call KingSquare
+    sub d
+    ld l, a
+    ld h, HIGH(Aligned)
+    ld a, [hl]
+    and a
+    jr z, .keep
+.full:
     push bc
     call Legal
     pop bc
-    jr z, .next
+    jr z, .tested
+    dec b
+.keep:
     ld a, [wCount]                 ; keep it (in place: wCount <= wGenIdx)
     ld l, a
     inc a
@@ -965,28 +1038,20 @@ GenStep:
     ld [hl], d
     ld h, HIGH(wTo)
     ld [hl], e
-.next:
+    jr .next
+.tested:
     dec b
+.next:
+    ld a, b
+    and a
+    ret z
+    dec c
     jr nz, .loop
     ret
 .done:
     ld a, GEN_DONE
     ld [wGenState], a
-    ; in check?
-    ld a, [wSide]
-    and a
-    ld a, [wKingW]
-    jr z, .king
-    ld a, [wKingB]
-.king:
-    ld c, a
-    ld a, [wSide]
-    xor BLACK
-    ld b, a
-    call IsAttacked
-    ld a, 0
-    rla
-    ld [wInCheck], a
+    ld a, [wInCheck]
     and a
     jr z, .noCheck
     ld a, 3                        ; check sound
@@ -1734,6 +1799,25 @@ DiagonalDirs:
 StraightDirs:
     db -10, -1, 1, 10, 0
 
+; Aligned[king - square]: 1 when the two squares can be on one rank, file or diagonal
+; (a multiple of 9, 10 or 11 apart, or less than 8): only then can moving a piece off
+; that square uncover a check.
+SECTION "Aligned", ROM0, ALIGN[8]
+Aligned:
+FOR I, 256
+    IF I < 128
+        REDEF DIST = I
+    ELSE
+        REDEF DIST = 256 - I
+    ENDC
+    IF DIST % 9 == 0 || DIST % 10 == 0 || DIST % 11 == 0 || DIST <= 7
+        db 1
+    ELSE
+        db 0
+    ENDC
+ENDR
+
+SECTION "Start board", ROM0
 StartBoard:
     ds 20, OFF
     db OFF, ROOK, KNIGHT, BISHOP, QUEEN, KING, BISHOP, KNIGHT, ROOK, OFF
@@ -1754,15 +1838,24 @@ StartBoard:
 ; (king, clock, wins, OK), this player at the bottom. And the sprites in wOAM.
 Render:
     call RenderBoard
-    call RenderText
+    ldh a, [rLY]
+    ld [wLYs + 4], a
+    ld a, [wLoops]                 ; the words and clocks: every 4th frame is enough
+    and 3
+    call z, RenderText
+    ldh a, [rLY]
+    ld [wLYs + 5], a
     jp RenderSprites
 
+; Draws the squares that changed since they were last drawn (DRAWS_PER_FRAME at most;
+; the rest next frame).
 RenderBoard:
     ld a, [wBoardDirty]
     and a
     ret z
     xor a
     ld [wBoardDirty], a
+    ldh [hDrawn], a
     ld a, [wMyColor]               ; white looks from rank 1, black from rank 8
     and a
     jr nz, .black
@@ -1794,6 +1887,25 @@ RenderBoard:
     ld b, HIGH(wBoard)
     ld a, [bc]
     ld e, a                        ; the piece
+    ld b, HIGH(wDrawn)
+    ld a, [bc]
+    cp e
+    jr nz, .changed
+    inc hl                         ; as drawn: next square
+    inc hl
+    jr .nextSquare
+.changed:
+    ldh a, [hDrawn]
+    cp DRAWS_PER_FRAME
+    jr nz, .draw
+    ld a, 1                        ; enough for this frame: the rest next frame
+    ld [wBoardDirty], a
+    ret
+.draw:
+    inc a
+    ldh [hDrawn], a
+    ld a, e
+    ld [bc], a
     ldh a, [hX]
     ld b, a
     ldh a, [hY]
@@ -1834,6 +1946,7 @@ RenderBoard:
     ld [hl], a
     ld de, -31
     add hl, de
+.nextSquare:
     ldh a, [hStep]
     ld b, a
     ldh a, [hSq]
@@ -1856,7 +1969,7 @@ RenderBoard:
     inc a
     ldh [hY], a
     cp 8
-    jr nz, .row
+    jp nz, .row
     ret
 
 DEF ROW0  EQU 0
@@ -2228,11 +2341,12 @@ RenderSprites:
     ld a, [wLastTo]
     call .mark
 .clear:
-    ld a, l                        ; hide the other sprites
+    ld a, l                        ; hide the other sprites (Y = 0)
     cp 160
     ret nc
-    xor a
-    ld [hl+], a
+    ld [hl], 0
+    add 4
+    ld l, a
     jr .clear
 .mark:
     push hl
@@ -2330,25 +2444,66 @@ PutCorners:
     ret
 
 ; ---------------------------------------------------------------------------- VRAM
-; Compares part of wWant with wShown each frame and queues what changed (at most
-; QUEUE_LEN tiles a frame); Draw writes the queue in the next VBlank.
+; Compares DIFF_ROWS rows of wWant with wShown each frame and queues the tiles that
+; changed (at most QUEUE_LEN a frame); Draw writes the queue in the next VBlank.
 BuildQueue:
-    ld de, wQueue
-    ld a, [wDiffPos]
-    ld l, a
-    ld a, [wDiffPos + 1]
-    ld h, a
+    ld a, LOW(wQueue)
+    ldh [hQ], a
+    ld a, HIGH(wQueue)
+    ldh [hQ + 1], a
     ld b, QUEUE_LEN
-    ld c, DIFF_PER_FRAME
-.loop:
-    ld a, [hl]                     ; wanted
-    set 2, h                       ; -> wShown
+    ld a, DIFF_ROWS
+    ldh [hRows], a
+.row:
+    ld a, [wDiffRow]
+    ld l, a
+    ld h, 0
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    ld de, wWant
+    add hl, de                     ; hl = wanted row
+    ld d, h
+    ld e, l
+    set 2, d                       ; de = shown row
+    ld c, 20
+.col:
+    ld a, [de]
     cp [hl]
-    jr z, .same
-    ld [hl], a
-    res 2, h
+    jr nz, .diff
+.nextCol:
+    inc e
+    inc l
+    dec c
+    jr nz, .col
+    ld a, [wDiffRow]
+    inc a
+    cp 18
+    jr c, .nextRow
+    xor a
+.nextRow:
+    ld [wDiffRow], a
+    ldh a, [hRows]
+    dec a
+    ldh [hRows], a
+    jr nz, .row
+    jr .pad
+.diff:
+    ld a, b
+    and a
+    jr z, .pad                     ; queue full: this row again next frame
+    dec b
+    ld a, [hl]
+    ld [de], a
+    push de
     push af
-    ld a, l                        ; queue: VRAM address, tile
+    ldh a, [hQ]
+    ld e, a
+    ldh a, [hQ + 1]
+    ld d, a
+    ld a, l                        ; VRAM address, tile
     ld [de], a
     inc de
     ld a, h
@@ -2358,32 +2513,19 @@ BuildQueue:
     pop af
     ld [de], a
     inc de
-    dec b
-    jr .next
-.same:
-    res 2, h
-.next:
-    inc hl
-    ld a, l
-    cp LOW(wWant + SCREEN_SIZE)
-    jr nz, .notEnd
-    ld a, h
-    cp HIGH(wWant + SCREEN_SIZE)
-    jr nz, .notEnd
-    ld hl, wWant
-.notEnd:
-    ld a, b
-    and a
-    jr z, .stop
-    dec c
-    jr nz, .loop
-.stop:
-    ld a, l
-    ld [wDiffPos], a
-    ld a, h
-    ld [wDiffPos + 1], a
+    ld a, e
+    ldh [hQ], a
+    ld a, d
+    ldh [hQ + 1], a
+    pop de
+    jr .nextCol
 .pad:
-    ld a, b                        ; unused entries: a map row nobody sees
+    ldh a, [hQ]                    ; unused entries: a map row nobody sees
+    ld e, a
+    ldh a, [hQ + 1]
+    ld d, a
+.padLoop:
+    ld a, b
     and a
     ret z
     ld a, LOW(DUMMY_VRAM)
@@ -2396,18 +2538,16 @@ BuildQueue:
     ld [de], a
     inc de
     dec b
-    jr .pad
+    jr .padLoop
 
 ClearQueue:
     ld de, wQueue
     ld b, QUEUE_LEN
-    jr BuildQueue.pad
+    jr BuildQueue.padLoop
 
 ResetDiff:
-    ld a, LOW(wWant)
-    ld [wDiffPos], a
-    ld a, HIGH(wWant)
-    ld [wDiffPos + 1], a
+    xor a
+    ld [wDiffRow], a
     ret
 
 ; In VBlank: sprites by DMA, then exactly QUEUE_LEN tile writes (always the same time,
