@@ -127,7 +127,10 @@ function setSolo(solo) {
   viewButton.textContent = solo ? showLabel() : hideLabel();
   try { localStorage.setItem(soloKey, solo ? "1" : "0"); } catch { /* not kept */ }
 }
+let secret = false;   // a game with hidden cards: the server sends no other screen
 function restoreSolo(shared) {
+  viewButton.hidden = secret || screens.length < 2;
+  if (secret) return document.body.classList.add("solo");
   soloKey = shared ? "solo-shared" : "solo";
   let kept = null;
   try { kept = localStorage.getItem(soloKey); } catch { /* default */ }
@@ -209,7 +212,8 @@ function showClock({ left, sudden }) {
   clock.textContent = sudden ? "Sudden death" : `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
 }
 
-function showResult({ winner, wins, best, over, forfeit, time }) {
+let team = null;   // my team's players, in games played in teams
+function showResult({ winner, team: winners, wins, best, over, forfeit, time }) {
   if (forfeit && !winner && forfeit !== Number(player)) {      // more than two players: nobody won
     result.className = "show over";
     result.querySelector("strong").textContent = "MATCH OVER";
@@ -219,14 +223,16 @@ function showResult({ winner, wins, best, over, forfeit, time }) {
     resultTimer = setTimeout(() => { result.className = ""; }, 6000);
     return;
   }
-  const won = winner === Number(player);
-  const score = wins.length > 2
-    ? wins.map((w, i) => (i === me ? `you ${w}` : `P${i + 1} ${w}`)).join(" · ")
-    : `${wins[me] ?? 0} – ${wins[1 - me] ?? 0}`;
+  const won = winner === Number(player) || (winners?.includes(Number(player)) ?? false);
+  const other = team && wins.findIndex((_, i) => !team.includes(i + 1));
+  const score = team ? `${wins[me] ?? 0} – ${wins[other] ?? 0}`
+    : wins.length > 2
+      ? wins.map((w, i) => (i === me ? `you ${w}` : `P${i + 1} ${w}`)).join(" · ")
+      : `${wins[me] ?? 0} – ${wins[1 - me] ?? 0}`;
   result.className = `show ${won ? "win" : "lose"}${over ? " over" : ""}`;
   result.querySelector("strong").textContent = won ? "YOU WIN" : "YOU LOSE";
   result.querySelector("span").textContent = forfeit
-    ? (won ? `Player ${forfeit} was offline too long` : "You were offline too long")
+    ? (forfeit === Number(player) ? "You were offline too long" : `Player ${forfeit} was offline too long`)
     : over
       ? `${time ? "Time up · " : ""}${won ? "Match won" : "Match lost"} ${score}`
       : `${won ? "Round won" : "Round lost"} · ${score} · first to ${best}`;
@@ -420,6 +426,8 @@ function connect() {
       if (msg.t === "seat") {
         if (msg.token) saveToken(msg.token);
         buildScreens(msg.seats ?? 2);
+        secret = msg.secret === true;
+        team = msg.teams?.find((t) => t.includes(Number(player))) ?? null;
         restoreSolo(msg.shared === true);
         showInvites(msg.seats ?? 2);
         for (const s of screens) s.decoder.px.fill(0);   // the server starts again from blank

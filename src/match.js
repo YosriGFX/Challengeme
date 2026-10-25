@@ -30,8 +30,9 @@ const MAX_SEATS = 4;
 // Here -> phone: text {"t":"seat"|"lobby"|"trap"|"result",...}; binary screen updates for
 // every Game Boy, each carrying only what changed since the last update of that screen
 // the phone was sent (format: gb/frames.js). Seeing the opponents' screens live keeps
-// them from being a black box; it is still only pixels. Each phone also gets its own
-// Game Boy's sound register writes (format: gb/sound.js).
+// them from being a black box; it is still only pixels. Games with hidden information
+// (`secret`, cards in hand) send each phone only its own screen. Each phone also gets its
+// own Game Boy's sound register writes (format: gb/sound.js).
 //
 // The number of seats is the game's (`players`), or what the player who opened the match
 // chose within the game's range. A match starts only when every seat is taken: phases are
@@ -57,6 +58,7 @@ export class Match extends DurableObject {
     this.sql.exec(SQL.createMeta);
     this.sql.exec(SQL.createResults);
     this.n = 2;                     // seats in this match, known once the game is
+    this.spec = null;               // GAMES[game], known once the game is
     this.machines = null;           // a GameBoy per seat, rebuilt after eviction
     this.link = null;               // what connects them: { run(cycles) }
     this.rule = null;               // how this game shows who won (GAMES[game].result)
@@ -172,17 +174,20 @@ export class Match extends DurableObject {
     this.start();
   }
 
-  // Out of pause time while offline: that player loses the match. With two players the
-  // other one wins it; with more, the match ends without a winner.
+  // Out of pause time while offline: that player loses the match. With two players (or
+  // two teams) the other one wins it; with more, the match ends without a winner.
   forfeit(player) {
     if (this.pause) clearTimeout(this.pause.timer);
     this.pause = null;
     this.stop();
     this.left = 0;
-    const winner = this.n === 2 ? 3 - player : 0, [wins1 = 0, wins2 = 0] = this.wins;
+    const sides = this.sides();
+    const winner = sides.length === 2 ? sides.find((side) => !side.includes(player))[0] : 0;
+    const [wins1 = 0, wins2 = 0] = this.wins;
     this.sql.exec(SQL.addResult, winner, wins1, wins2, 1, Date.now(), "forfeit");
     console.log(JSON.stringify({ msg: "forfeit", player, winner }));
-    const msg = { t: "result", winner, wins: this.wins, best: this.rule?.best ?? 0, over: true, forfeit: player };
+    const msg = { t: "result", winner, team: winner ? this.teamOf(winner) : null, wins: this.wins,
+                  best: this.rule?.best ?? 0, over: true, forfeit: player };
     for (const p of this.seats()) this.tell(p, msg);
     this.missed = { player, msg };                   // the loser is offline: tell them when back
     this.phase = "lobby";
@@ -233,7 +238,8 @@ export class Match extends DurableObject {
   // on it gets what changed since what it was sent.
   seat(ws, player, token = null) {
     const game = this.game();
-    ws.send(JSON.stringify({ t: "seat", player, game, seats: this.n, shared: GAMES[game]?.shared, token }));
+    const { shared, secret, teams } = GAMES[game] ?? {};
+    ws.send(JSON.stringify({ t: "seat", player, game, seats: this.n, shared, secret, teams, token }));
     return this.views[player - 1] = { encoders: this.seats().map((p) => new FrameEncoder(p - 1)), seq: 0, acked: 0,
                                       frameSeq: this.seats().map(() => -1), soundFresh: true };
   }
@@ -252,7 +258,8 @@ export class Match extends DurableObject {
   game() {
     const id = this.sql.exec(SQL.getGame).toArray()[0]?.v;
     if (!id || !Object.hasOwn(GAMES, id)) return null;
-    const { players, minPlayers } = GAMES[id];
+    this.spec = GAMES[id];
+    const { players, minPlayers } = this.spec;
     const chosen = Number(this.sql.exec(SQL.getSeats).toArray()[0]?.v ?? players);
     this.n = Number.isInteger(chosen) && chosen >= minPlayers && chosen <= players ? chosen : players;
     return id;
@@ -291,6 +298,7 @@ export class Match extends DurableObject {
       : { run: (cycles) => runLinked(machines[0], machines[1], cycles) };
     for (let f = 0; f < (start?.frames ?? 0); f++) {
       for (const [at, ...bits] of start.inputs) if (at === f) machines.forEach((m, i) => { m.buttons = bits[i] ?? 0; });
+      this.randomize();
       this.link.run(FRAME_CYCLES);
     }
     this.buttons.fill(0);
@@ -348,6 +356,7 @@ export class Match extends DurableObject {
     const now = Date.now();
     let ran = 0;
     for (let n = 0; this.next <= now && n < MAX_CATCH_UP; n++, ran++) {
+      this.randomize();
       this.link.run(FRAME_CYCLES);
       this.next += PERIOD;
       this.machines.forEach((m, i) => {
@@ -374,6 +383,15 @@ export class Match extends DurableObject {
     this.timer = setTimeout(() => this.tick(), Math.max(1, this.next - Date.now()));
   }
 
+  // Fresh random bytes, the same on every Game Boy, for the frame about to run (games with
+  // randomAt): nothing in them follows from earlier ones, so no deal can be worked out.
+  randomize() {
+    const { randomAt, randomBytes } = this.spec;
+    if (randomAt === null) return;
+    const bytes = crypto.getRandomValues(new Uint8Array(randomBytes));
+    for (const m of this.machines) m.u8.set(bytes, randomAt);
+  }
+
   // Runs the match clock by `frames` played; at zero the leader wins, or sudden death.
   countDown(frames) {
     if (!this.left || this.overAt) return;
@@ -394,10 +412,24 @@ export class Match extends DurableObject {
     return { t: "clock", left: Math.ceil(this.left / FRAME_HZ), sudden: this.timeUp };
   }
 
-  // The player with strictly the most round wins, or 0 when the lead is shared.
+  // Who wins together: the game's teams (each a list of players), or each player alone.
+  sides() {
+    const teams = this.spec?.teams;
+    return teams && this.n === teams.flat().length ? teams : this.seats().map((p) => [p]);
+  }
+
+  // The team or player of `player`, for result messages: null without teams.
+  teamOf(player) {
+    const sides = this.sides();
+    return sides[0].length > 1 ? sides.find((side) => side.includes(player)) ?? null : null;
+  }
+
+  // The player (first of a team) with strictly the most round wins, or 0 when the lead
+  // is shared.
   leader() {
-    const top = Math.max(...this.wins), at = this.wins.indexOf(top);
-    return this.wins.lastIndexOf(top) === at ? at + 1 : 0;
+    const wins = this.sides().map(([first]) => this.wins[first - 1]);
+    const top = Math.max(...wins), at = wins.indexOf(top);
+    return wins.lastIndexOf(top) === at ? this.sides()[at][0] : 0;
   }
 
   // `winner` takes the match: kept in SQLite and told to every phone.
@@ -409,7 +441,7 @@ export class Match extends DurableObject {
     this.timeUp = false;
     this.sql.exec(SQL.addResult, winner, wins1, wins2, 1, Date.now(), reason);
     console.log(JSON.stringify({ msg: "result", winner, wins: this.wins, over: true, reason }));
-    const msg = { t: "result", winner, wins: this.wins, best: this.rule.best, over: true, time };
+    const msg = { t: "result", winner, team: this.teamOf(winner), wins: this.wins, best: this.rule.best, over: true, time };
     for (const p of this.seats()) this.tell(p, msg);
   }
 
@@ -423,7 +455,7 @@ export class Match extends DurableObject {
     }
     const view = this.view(player);
     if (!view) return;
-    const others = this.machines.map((_, i) => i).filter((i) => i !== player - 1);
+    const others = this.spec.secret ? [] : this.machines.map((_, i) => i).filter((i) => i !== player - 1);
     for (const screen of [player - 1, ...others]) {
       const m = this.machines[screen];
       if (m.frameSeq === view.frameSeq[screen]) continue;
@@ -456,16 +488,17 @@ export class Match extends DurableObject {
   //   other player's; a round counts once the two Game Boys agree.
   // - winsBy (any number): every Game Boy keeps every player's round wins, player 1 at
   //   winsBy, player 2 at winsBy + 1, ...; a round counts once all Game Boys agree.
-  // Each new win is told to every phone and kept in SQLite; after the time limit, the
-  // round win that gives one player the lead ends the match.
+  // With `teams`, teammates must have the same round wins, and win together. Each new win
+  // is told to every phone and kept in SQLite; after the time limit, the round win that
+  // gives one player (or team) the lead ends the match.
   checkResult() {
     if (!this.rule) return;
-    for (const player of this.seats()) {
+    for (const side of this.sides()) {
       if (this.overAt) return;
-      const wins = this.agreedWins(player);
-      if (wins === null) continue;                                    // not agreed yet
+      const [player] = side, wins = this.agreedWins(player);
+      if (wins === null || side.some((p) => this.agreedWins(p) !== wins)) continue;   // not agreed yet
       const before = this.wins[player - 1];
-      this.wins[player - 1] = wins;
+      for (const p of side) this.wins[p - 1] = wins;
       if (wins !== before + 1 || before >= this.rule.best) continue;   // unchanged, reset, or past the end
       if (wins >= this.rule.best || (this.timeUp && this.leader() === player)) {
         this.endMatch(player, "game");
@@ -474,7 +507,8 @@ export class Match extends DurableObject {
       const [wins1, wins2 = 0] = this.wins;
       this.sql.exec(SQL.addResult, player, wins1, wins2, 0, Date.now(), "game");
       console.log(JSON.stringify({ msg: "result", winner: player, wins: this.wins, over: false }));
-      for (const p of this.seats()) this.tell(p, { t: "result", winner: player, wins: this.wins, best: this.rule.best, over: false });
+      const msg = { t: "result", winner: player, team: this.teamOf(player), wins: this.wins, best: this.rule.best, over: false };
+      for (const p of this.seats()) this.tell(p, msg);
     }
   }
 

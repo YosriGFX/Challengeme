@@ -24,6 +24,8 @@
 //           the server does after the start script.
 // --seedAt=ADDR: writes two random bytes there on every Game Boy at --pokeAt, as the
 //           server does (game.json "seedAt"); --seed=N makes them the same every run.
+// --randomAt=ADDR:N: writes N random bytes there on every Game Boy before every frame, as
+//           the server does (game.json "randomAt", "randomBytes"); --seed=N repeats them.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { pathToFileURL } from "node:url";
@@ -42,6 +44,12 @@ const out = args.out ?? "shot";
 const [winsAt, theirsAt] = (args.wins ?? "").split(":").map(hex);
 const winsBy = hex(args.winsBy), best = Number(args.best ?? 0), bestAt = hex(args.bestAt), pokeAt = Number(args.pokeAt ?? 0);
 const seedAt = hex(args.seedAt);
+const [randomAt, randomBytes] = (args.randomAt ?? "").split(":").map((v, i) => (i ? Number(v) : hex(v)));
+let state = (Number(args.seed ?? Math.random() * 2 ** 32) >>> 0) || 1;
+const nextByte = () => {          // xorshift32: a repeatable stream for --seed
+  state ^= state << 13; state >>>= 0; state ^= state >>> 17; state ^= state << 5; state >>>= 0;
+  return state >>> 24;
+};
 const seedBytes = args.seed === undefined ? [Math.random() * 256, Math.random() * 256].map(Math.floor)
   : [Number(args.seed) & 0xff, (Number(args.seed) >> 8) & 0xff];
 
@@ -85,6 +93,10 @@ for (let f = 0; f <= frames; f++) {
   for (const [at, ...bits] of script) if (at === f) gbs.forEach((m, i) => { m.buttons = bits[i] ?? 0; });
   if (bestAt !== undefined && best && f === pokeAt) gbs.forEach((m) => { m.u8[bestAt] = best; });
   if (seedAt !== undefined && f === pokeAt) gbs.forEach((m) => { m.u8[seedAt] = seedBytes[0]; m.u8[seedAt + 1] = seedBytes[1]; });
+  if (randomAt !== undefined) {
+    const bytes = Array.from({ length: randomBytes }, nextByte);
+    gbs.forEach((m) => m.u8.set(bytes, randomAt));
+  }
   if (bot) bot({ frame: f, gbs, ram, press, players });
   if (shots.has(f)) savePng(`${out}_${f}.png`);
   const w = wins();
