@@ -27,6 +27,10 @@ import tetris from "./tetris.wasm";
 // game `frames` frames ahead at once, pressing buttons as it goes: each [frame, player 1,
 // player 2, ...] sets every Game Boy's buttons from that frame on. Players start in the match.
 //
+// `seedAt` (optional) is a RAM address where the server writes two random bytes, the same
+// on every Game Boy, right after the `start` script: a fair coin the game can use (Chess
+// picks who plays white with it), which no phone can see or set.
+//
 // `shared: true` marks games that show every player on each Game Boy's own screen: phones
 // then start with the other players' screens hidden.
 //
@@ -51,13 +55,13 @@ const BUILT_IN = [
     start: { frames: 30, inputs: [[10, 0x80, 0], [16, 0, 0]] } },
 ];
 
-// id -> { title, module, result, start, players, minPlayers, link, shared }
+// id -> { title, module, result, start, players, minPlayers, link, shared, seedAt }
 // Match time limits the opener can pick, in seconds (0 = none), for games whose result
 // the server reads: when time is up, the most round wins takes the match.
 export const TIME_CHOICES = Object.freeze([0, 60, 120, 180, 240, 300, 600]);
 
 export const GAMES = Object.freeze(Object.fromEntries(
   [...local, ...BUILT_IN].map(({ id, title, module, result = null, start = null, players = 2, minPlayers = players,
-                                link = players > 2 ? "adapter" : "cable", shared = false }) =>
-    [id, Object.freeze({ title, module, result, start, players, minPlayers, link, shared })]),
+                                link = players > 2 ? "adapter" : "cable", shared = false, seedAt = null }) =>
+    [id, Object.freeze({ title, module, result, start, players, minPlayers, link, shared, seedAt })]),
 ));

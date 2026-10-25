@@ -285,7 +285,7 @@ export class Match extends DurableObject {
 
   // Fresh Game Boys, run past the menus at once if the game says how.
   newMatch(game) {
-    const { module, result, start, link } = GAMES[game];
+    const { module, result, start, link, seedAt } = GAMES[game];
     const machines = this.machines = this.seats().map(() => new GameBoy(module));
     this.link = link === "adapter" || this.n > 2 ? new Adapter(machines)
       : { run: (cycles) => runLinked(machines[0], machines[1], cycles) };
@@ -298,6 +298,10 @@ export class Match extends DurableObject {
     for (const m of this.machines) { m.buttons = 0; m.takeSound(); }
     this.rule = this.n === 2 || result?.winsBy ? this.ruleFor(result) : null;
     if (this.rule?.bestAt) for (const m of machines) m.u8[this.rule.bestAt] = this.rule.best;
+    if (seedAt) {                         // the same fresh random bytes on every Game Boy
+      const seed = crypto.getRandomValues(new Uint8Array(2));
+      for (const m of machines) m.u8.set(seed, seedAt);
+    }
     this.wins = this.seats().map(() => 0);
     this.overAt = 0;
     this.left = this.rule ? this.timeLimit() * FRAME_HZ : 0;
