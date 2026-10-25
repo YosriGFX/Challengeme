@@ -33,10 +33,12 @@ import tetris from "./tetris.wasm";
 // on every Game Boy, right after the `start` script: a fair coin the game can use (Chess
 // picks who plays white with it), which no phone can see or set.
 //
-// `randomAt` (optional) is a RAM address where the server writes `randomBytes` fresh
-// random bytes, the same on every Game Boy, before every frame: what a card game shuffles
-// with, so no deal follows from an earlier one (a seed would let a player who knows a
-// few cards work out the rest).
+// `random` (optional) hands out fresh random bytes on request, for a card game's deals:
+// no deal then follows from an earlier one (one seed would let a player who knows a few
+// cards work out the rest). { ask, at, bytes }: when every Game Boy has the same new
+// non-zero byte at `ask` (a request number), the server writes `bytes` fresh random bytes
+// at `at` on every Game Boy, once, before the next frame. The game uses them a fixed
+// number of its ticks later, so every Game Boy reads them on the same tick.
 //
 // `secret: true` marks games with hidden information (cards in hand): each phone is sent
 // only its own Game Boy's screen, never the others'.
@@ -76,16 +78,16 @@ const BUILT_IN = [
     start: { frames: 30, inputs: [[10, 0x80, 0], [16, 0, 0]] } },
 ];
 
-// id -> { title, module, result, start, players, minPlayers, link, shared, seedAt, randomAt,
-//         randomBytes, secret, teams }
+// id -> { title, module, result, start, players, minPlayers, link, shared, seedAt, random,
+//         secret, teams }
 // Match time limits the opener can pick, in seconds (0 = none), for games whose result
 // the server reads: when time is up, the most round wins takes the match.
 export const TIME_CHOICES = Object.freeze([0, 60, 120, 180, 240, 300, 600]);
 
 export const GAMES = Object.freeze(Object.fromEntries(
   [...local, ...BUILT_IN].map(({ id, title, module, result = null, start = null, players = 2, minPlayers = players,
-                                link = players > 2 ? "adapter" : "cable", shared = false, seedAt = null, randomAt = null,
-                                randomBytes = 0, secret = false, teams = null }) =>
-    [id, Object.freeze({ title, module, result, start, players, minPlayers, link, shared, seedAt, randomAt, randomBytes,
-                         secret, teams })]),
+                                link = players > 2 ? "adapter" : "cable", shared = false, seedAt = null, random = null,
+                                secret = false, teams = null }) =>
+    [id, Object.freeze({ title, module, result, start, players, minPlayers, link, shared, seedAt, random, secret,
+                         teams })]),
 ));

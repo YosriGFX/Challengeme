@@ -296,6 +296,7 @@ export class Match extends DurableObject {
     const machines = this.machines = this.seats().map(() => new GameBoy(module));
     this.link = link === "adapter" || this.n > 2 ? new Adapter(machines)
       : { run: (cycles) => runLinked(machines[0], machines[1], cycles) };
+    this.answered = 0;              // the last random request served (GAMES[game].random)
     for (let f = 0; f < (start?.frames ?? 0); f++) {
       for (const [at, ...bits] of start.inputs) if (at === f) machines.forEach((m, i) => { m.buttons = bits[i] ?? 0; });
       this.randomize();
@@ -383,13 +384,17 @@ export class Match extends DurableObject {
     this.timer = setTimeout(() => this.tick(), Math.max(1, this.next - Date.now()));
   }
 
-  // Fresh random bytes, the same on every Game Boy, for the frame about to run (games with
-  // randomAt): nothing in them follows from earlier ones, so no deal can be worked out.
+  // Fresh random bytes, the same on every Game Boy, once all of them ask with a new request
+  // number (games with `random`): nothing in them follows from earlier ones, so no deal
+  // can be worked out from the cards seen before.
   randomize() {
-    const { randomAt, randomBytes } = this.spec;
-    if (randomAt === null) return;
-    const bytes = crypto.getRandomValues(new Uint8Array(randomBytes));
-    for (const m of this.machines) m.u8.set(bytes, randomAt);
+    const { random } = this.spec;
+    if (!random) return;
+    const asked = this.machines[0].u8[random.ask];
+    if (asked === 0 || asked === this.answered || this.machines.some((m) => m.u8[random.ask] !== asked)) return;
+    this.answered = asked;
+    const bytes = crypto.getRandomValues(new Uint8Array(random.bytes));
+    for (const m of this.machines) m.u8.set(bytes, random.at);
   }
 
   // Runs the match clock by `frames` played; at zero the leader wins, or sudden death.

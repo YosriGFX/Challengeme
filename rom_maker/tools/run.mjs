@@ -24,8 +24,9 @@
 //           the server does after the start script.
 // --seedAt=ADDR: writes two random bytes there on every Game Boy at --pokeAt, as the
 //           server does (game.json "seedAt"); --seed=N makes them the same every run.
-// --randomAt=ADDR:N: writes N random bytes there on every Game Boy before every frame, as
-//           the server does (game.json "randomAt", "randomBytes"); --seed=N repeats them.
+// --random=ASK:AT:N: when every Game Boy has the same new non-zero byte at ASK, writes N
+//           random bytes at AT on every Game Boy, as the server does (game.json "random");
+//           --seed=N repeats them.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { pathToFileURL } from "node:url";
@@ -44,7 +45,8 @@ const out = args.out ?? "shot";
 const [winsAt, theirsAt] = (args.wins ?? "").split(":").map(hex);
 const winsBy = hex(args.winsBy), best = Number(args.best ?? 0), bestAt = hex(args.bestAt), pokeAt = Number(args.pokeAt ?? 0);
 const seedAt = hex(args.seedAt);
-const [randomAt, randomBytes] = (args.randomAt ?? "").split(":").map((v, i) => (i ? Number(v) : hex(v)));
+const [randomAsk, randomAt, randomBytes] = (args.random ?? "").split(":").map((v, i) => (i < 2 ? hex(v) : Number(v)));
+let answered = 0;
 let state = (Number(args.seed ?? Math.random() * 2 ** 32) >>> 0) || 1;
 const nextByte = () => {          // xorshift32: a repeatable stream for --seed
   state ^= state << 13; state >>>= 0; state ^= state >>> 17; state ^= state << 5; state >>>= 0;
@@ -93,7 +95,9 @@ for (let f = 0; f <= frames; f++) {
   for (const [at, ...bits] of script) if (at === f) gbs.forEach((m, i) => { m.buttons = bits[i] ?? 0; });
   if (bestAt !== undefined && best && f === pokeAt) gbs.forEach((m) => { m.u8[bestAt] = best; });
   if (seedAt !== undefined && f === pokeAt) gbs.forEach((m) => { m.u8[seedAt] = seedBytes[0]; m.u8[seedAt + 1] = seedBytes[1]; });
-  if (randomAt !== undefined) {
+  const asked = randomAsk === undefined ? 0 : gbs[0].u8[randomAsk];
+  if (asked && asked !== answered && gbs.every((m) => m.u8[randomAsk] === asked)) {
+    answered = asked;
     const bytes = Array.from({ length: randomBytes }, nextByte);
     gbs.forEach((m) => m.u8.set(bytes, randomAt));
   }

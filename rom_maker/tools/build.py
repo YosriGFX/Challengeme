@@ -59,7 +59,7 @@ def main():
     ap.add_argument("--players", type=int, help="Game Boys to run (default: game.json players, or 2)")
     ap.add_argument("--best", type=int, help="round wins for the match (default: game.json result.best)")
     ap.add_argument("--bot", help="a bot module that plays (see tools/run.mjs)")
-    ap.add_argument("--seed", type=int, help="makes game.json seedAt and randomAt bytes the same every run (default: random)")
+    ap.add_argument("--seed", type=int, help="makes game.json seedAt and random bytes the same every run (default: random)")
     args = ap.parse_args()
 
     game = args.game.resolve()
@@ -105,8 +105,9 @@ def main():
         cmd += [f"--seedAt={meta['seedAt']:04X}", f"--pokeAt={start['frames'] if start else 0}"]
         if args.seed is not None:
             cmd.append(f"--seed={args.seed}")
-    if "randomAt" in meta:
-        cmd.append(f"--randomAt={meta['randomAt']:04X}:{meta['randomBytes']}")
+    if "random" in meta:
+        r = meta["random"]
+        cmd.append(f"--random={r['ask']:04X}:{r['at']:04X}:{r['bytes']}")
         if args.seed is not None and "seedAt" not in meta:
             cmd.append(f"--seed={args.seed}")
     if script:
