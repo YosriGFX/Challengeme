@@ -4,8 +4,8 @@ No C, no compiler: a game is a few `.asm` text files that the RGBDS assembler tu
 a `.gb` ROM, byte for byte what you wrote. That is also what the translator handles best.
 Two complete games are written this way; read the one you start from next to this page:
 [template/](template/) (Coin Duel, two players on the link cable) and
-[skyhop/](skyhop/) (Sky Hop, two to four players on the 4-Player Adapter). A third,
-[chess/](chess/), is a bigger 2-player game on the cable.
+[skyhop/](skyhop/) (Sky Hop, two to four players on the 4-Player Adapter). Two bigger
+2-player games on the cable are [chess/](chess/) and [dama/](dama/).
 [HARDWARE.md](HARDWARE.md) has the engine's rules.
 
 ## 1. Tools and files

@@ -26,6 +26,7 @@ screenshots.
 | [template/](template/) | Coin Duel: a complete, tested 2-player game (link cable) |
 | [skyhop/](skyhop/) | Sky Hop: a complete, tested 2-4 player game (4-Player Adapter) |
 | [chess/](chess/) | Chess: full rules and clocks for 2 players (link cable); heavy work spread over frames |
+| [dama/](dama/) | Dama (checkers): flying kings, forced longest capture, clocks, for 2 players (link cable) |
 | `tools/new.py` | starts a new game from the right example |
 | `tools/build.py` | assemble + translate + run linked Game Boys, screenshots, round wins, bots |
 | `tools/run.mjs` | the run on its own: 2-4 Game Boys, cable or adapter, script or bot |
@@ -34,8 +35,8 @@ screenshots.
 Try the examples: `python3 tools/build.py template` and `python3 tools/build.py skyhop`,
 then open `template/build/shot_*.png` and `skyhop/build/shot_*.png`. A whole match with
 bots: `python3 tools/build.py skyhop --bot skyhop/bot.mjs --frames 30000 --shots ""`.
-All three are also on the server's game list (`src/games/coinduel.wasm`,
-`skyhop.wasm`, `chess.wasm`).
+All four are also on the server's game list (`src/games/coinduel.wasm`,
+`skyhop.wasm`, `chess.wasm`, `dama.wasm`).
 
 ## Add a finished game to the server
 

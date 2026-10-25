@@ -50,7 +50,7 @@ http or https; a page served from elsewhere needs its origin in `APP_ORIGIN` in
 wrangler.jsonc, or its match socket is refused.
 
 Committed games (`src/games/*.wasm`, listed in `src/games/index.js`) need no Python:
-Chess, Coin Duel, Sky Hop, Tetris and Dr. Mario, the games for two players or more whose round wins
+Chess, Dama, Coin Duel, Sky Hop, Tetris and Dr. Mario, the games for two players or more whose round wins
 the server reads. A game is built with `python -m translator rom.gb
 -o build/x.wat --wasm`, copied to `src/games/` and listed there. To try a ROM on one
 machine without committing it, `python -m tools.add_game rom.gb id "Title"` writes it to

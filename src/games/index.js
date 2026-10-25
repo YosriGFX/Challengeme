@@ -2,13 +2,14 @@
 // WebAssembly from bytes). They never reach a browser: players only get pixels.
 //
 // Only games for two players or more whose result the server reads (round wins, so the
-// match time limit works too). chess, coinduel and skyhop are our own homebrew ROMs
-// (rom_maker/chess, rom_maker/template and rom_maker/skyhop); tetris and drmario are translated from the
+// match time limit works too). chess, dama, coinduel and skyhop are our own homebrew
+// ROMs (rom_maker/chess, rom_maker/dama, rom_maker/template and rom_maker/skyhop); tetris and drmario are translated from the
 // owner's cartridge ROMs (only the .wasm is here, not the ROM). More games can be added on
 // one machine with `python -m tools.add_game <rom.gb> <id> "<title>"`, which writes them
 // to ./local/ and ./local.js; neither is committed. See TRANSLATOR.md.
 import chess from "./chess.wasm";
 import coinduel from "./coinduel.wasm";
+import dama from "./dama.wasm";
 import drmario from "./drmario.wasm";
 import local from "./local.js";
 import skyhop from "./skyhop.wasm";
@@ -41,6 +42,10 @@ import tetris from "./tetris.wasm";
 // two as well (games written for it, like Sky Hop).
 const BUILT_IN = [
   { id: "chess", title: "Chess (2 players)", module: chess, shared: true, seedAt: 0xc003,
+    result: { wins: 0xc000, theirs: 0xc001, best: 1, bestAt: 0xc002, bestChoices: [1, 2, 3, 5] },
+    // START on player 1 makes the handshake; seedAt picks who plays white
+    start: { frames: 30, inputs: [[10, 0x80, 0], [16, 0, 0]] } },
+  { id: "dama", title: "Dama (2 players)", module: dama, shared: true, seedAt: 0xc003,
     result: { wins: 0xc000, theirs: 0xc001, best: 1, bestAt: 0xc002, bestChoices: [1, 2, 3, 5] },
     // START on player 1 makes the handshake; seedAt picks who plays white
     start: { frames: 30, inputs: [[10, 0x80, 0], [16, 0, 0]] } },

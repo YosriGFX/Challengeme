@@ -18,7 +18,8 @@ are played for money, so fairness and the server knowing who won matter.
 
 A turn-based game with a lot of thinking per move (a board game) also starts from
 `template/`; `chess/` shows how to spread work that does not fit in one frame over
-several frames, and how to draw a busy screen with a fixed cost per frame.
+several frames, and how to draw a busy screen with a fixed cost per frame; `dama/` does
+the same for a depth-first search (the longest capture) one piece per frame.
 
 `python3 tools/new.py <name> "<Title>"` copies `template/`; add `--players 4` (or 3)
 for `skyhop/`. `<name>`: lowercase a-z 0-9 _ -.
