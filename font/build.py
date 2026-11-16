@@ -5,6 +5,7 @@
 
   public/console.ttf   for the browser: menus and game text (see public/style.css)
   ppu/font.h           the same strokes as a C table, for a client with no font engine
+  fpga/font_rom.vh     the same strokes as two ROMs, for the FPGA client
 
 Every glyph is a few straight strokes on a grid 4 wide and 6 high (y up, 0 = baseline),
 drawn with one pen width. Corners are cut, nothing is curved. Capital letters only:
@@ -171,8 +172,35 @@ def build_header(path):
             f.write('  ' + ','.join('0x%02X' % b for b in data[i:i + 20]) + ',\n')
         f.write('};\n\n#endif\n')
 
+def strokes_by_char():
+    """For 0x20..0x7E: the glyph's strokes as (first, count), and all strokes in one list."""
+    index, flat = [], []
+    for code in range(0x20, 0x7F):
+        segs = segments(GLYPHS.get(chr(code).upper(), GLYPHS['?']))
+        index.append((len(flat), len(segs)))
+        flat += segs
+    return index, flat
+
+def build_verilog(path):
+    """font_at[c - 0x20] = {first stroke (11 bits), count (5 bits)}; font_st[i] = {point a, point b}."""
+    index, flat = strokes_by_char()
+    pt = lambda p: (p[0] << 4) | (p[1] + 1)
+    with open(path, 'w') as f:
+        f.write('// font_rom.vh — the console font for the FPGA client. Made by font/build.py: do not edit.\n')
+        f.write('// A point is (x << 4) | (y + 1) on the 4 x 6 grid, y up from the baseline.\n')
+        f.write('reg [15:0] font_at [0:%d];\nreg [15:0] font_st [0:%d];\ninitial begin\n' % (len(index) - 1, len(flat) - 1))
+        for i, (first, count) in enumerate(index):
+            f.write('  font_at[%d] = 16\'h%04X;\n' % (i, (first << 5) | count))
+        for i, (a, b) in enumerate(flat):
+            f.write('  font_st[%d] = 16\'h%04X;\n' % (i, (pt(a) << 8) | pt(b)))
+        f.write('end\n')
+
 if __name__ == '__main__':
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     build_header(os.path.join(root, 'ppu', 'font.h'))
-    build_ttf(os.path.join(root, 'public', 'console.ttf'))
-    print('wrote ppu/font.h and public/console.ttf')
+    build_verilog(os.path.join(root, 'fpga', 'font_rom.vh'))
+    try:
+        build_ttf(os.path.join(root, 'public', 'console.ttf'))
+        print('wrote ppu/font.h, fpga/font_rom.vh and public/console.ttf')
+    except ImportError:
+        print('wrote ppu/font.h and fpga/font_rom.vh (pip install fonttools to also rebuild public/console.ttf)')

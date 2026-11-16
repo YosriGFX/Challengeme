@@ -471,5 +471,6 @@ must be equal: `node host/replay.mjs match.json` checks exactly that.
   and buttons around the same three calls for an ESP32 board.
 - **An FPGA client.** `fpga/ppu_line.v` draws the OP buffer one screen line at a time, slot by slot
   in layer order, into a line buffer the display reads. A small processor beside it runs `ppu.c` and
-  hands it the OP buffer once per tick. It draws filled rectangles today; each other shape is one more
-  case that says which pixels of the line it covers, and `hardware/raster.c` already has the rules.
+  hands it the OP buffer, the strings and the palette once per tick. Every OP becomes a few
+  primitives (box, disc, triangle, stroke) and every letter a few strokes from the same font table,
+  so it follows `hardware/raster.c` rule for rule. `make fpga-check` compares the two pixel for pixel.

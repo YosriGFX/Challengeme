@@ -242,6 +242,7 @@ Use fixed slot numbers for things that persist, so a change costs one slot.
   gate, link codes, the origin check, the offline cartridge route, match records and signatures.
 - **Written but never run:** `hardware/esp32/main/main.c` (no ESP-IDF, no board; `make esp32-check`
   only proves it is valid C), `evm/MatchLedger.sol` (the compiler download was not allowed),
-  `public/ledger.js` (no wallet, no browser), `fpga/ppu_line.v` (no Verilog tool).
-- **Started, not finished:** the FPGA client draws filled rectangles only; the other shapes and the
-  text are each one more case, with the integer rules already in `hardware/raster.c`.
+  `public/ledger.js` (no wallet, no browser), `fpga/ppu_line.v` (no Verilog tool was allowed).
+- **The FPGA client** (`fpga/ppu_line.v`) draws every OP and the console font one screen line at a
+  time, as a twin of `hardware/raster.c`. `make fpga-check` compares the two pixel for pixel for a
+  frame of every game; it needs Icarus Verilog, which could not be installed here.
