@@ -95,8 +95,10 @@ EXPORT(ppu_apply) u32 ppu_apply(u32 len) {
       memcpy(&shadow.pal[rx[i] * 3], &rx[i + 1], 3); i += 4; break; }
     case W_LABEL: {
       NEED(1 + CON_LABEL_LEN); if (!in_trans || rx[i] < 2 || rx[i] > 4) return F_ERROR;
-      memcpy(&shadow.labels[(rx[i] - 2) * CON_LABEL_LEN], &rx[i + 1], CON_LABEL_LEN); i += 1 + CON_LABEL_LEN; break; }
-    case W_TICK: NEED(1); if (!in_trans) return F_ERROR; shadow.tick = rx[i++]; break;
+      u8 *l = &shadow.labels[(rx[i] - 2) * CON_LABEL_LEN];
+      for (u8 k = 0; k < CON_LABEL_LEN; k++) { u8 c = rx[i + 1 + k]; l[k] = (!c || (c >= 0x20 && c <= 0x7E)) ? c : '?'; }
+      i += 1 + CON_LABEL_LEN; break; }
+    case W_TICK: NEED(1); if (!in_trans || rx[i] > 60) return F_ERROR; shadow.tick = rx[i++]; break;
     case W_SFXDEF: {
       NEED(9); if (!in_trans || rx[i] >= CON_SFX) return F_ERROR;
       memcpy(&shadow.sfx[rx[i] * 8], &rx[i + 1], 8); i += 9; break; }

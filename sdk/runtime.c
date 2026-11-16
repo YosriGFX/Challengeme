@@ -74,7 +74,7 @@ void con_label(u8 button, const char *text) {
   if (!in_transition || button < 2 || button > 4) return;
   u8 *p = &labels[(button - 2) * CON_LABEL_LEN];
   u8 i = 0;
-  for (; i < CON_LABEL_LEN && text[i]; i++) p[i] = (u8)text[i];
+  for (; i < CON_LABEL_LEN && text[i]; i++) p[i] = (text[i] >= 0x20 && text[i] <= 0x7E) ? (u8)text[i] : '?';
   for (; i < CON_LABEL_LEN; i++) p[i] = 0;
 }
 
