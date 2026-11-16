@@ -185,6 +185,8 @@ callbacks:
 | `cart_sys(player, code)` | a system message from HOME (`SYS_RESIGN`) |
 | `cart_tick()` | tick-rate times a second; never, if the rate is 0 |
 | `cart_draw(view)` | whenever something may have changed, once per view |
+| `cart_turn()` | optional: the seat that must act now, or 255 (lets one phone host two players) |
+| `cart_result()` | optional: 255 while playing, then the winning seat, or the number of seats for a draw |
 
 Read `book/tug.c` now. It is a complete game: two players mash A to pull a knot to their side.
 Notice what it does not have: no network code, no sockets, no knowledge of who is connected how.
@@ -401,6 +403,12 @@ A finger that starts on a button is followed until it lifts, so a thumb can roll
 **`main.js`** is the front panel: lobby, HOME, and the wiring. Both menus are driven by the stick
 and A / B or by a tap, and never scroll.
 
+**`local.js`** is a second thread that speaks exactly like `net.js`, so the page cannot tell them
+apart. Instead of a socket it hosts the match itself, with `match.mjs`: the same file the server
+runs. It is used only for a game whose manifest says `"offline"`, which the server then lets a
+player keep. One phone holds both seats; after every move `local.js` asks the cartridge whose turn
+it is (`cart_turn`) and shows that seat's view, so the board turns to the other player.
+
 ## 16. The host
 
 Files: `host/match.mjs`, `host/sim.mjs`.
@@ -434,6 +442,13 @@ this user may play this game. Only then does it hand the socket to `MatchDO`.
   then writes a row into `owned`.
 - **A locked game sends nothing.** The refusal happens at the upgrade, so not one byte of a game
   that is not owned reaches the device.
+- **A game leaves the server only if it says so.** `GET /offline/<cart>.wasm` answers only for a
+  cartridge whose manifest has `"offline": true`, and only to a user who may play it. Hiding things
+  from a player is then impossible, so only a game that hides nothing should ever say it.
+- **Results.** For a game that hides nothing, `GET /api/log/<cart>/<room>` gives the match record,
+  who won (`cart_result`), and the hashes a ledger holds. `POST /api/sign/<cart>/<room>` keeps one
+  wallet signature per seat once the match is over; `public/ledger.js` makes them, and
+  `evm/MatchLedger.sol` accepts a result only with both.
 
 `MatchDO` holds the WebSocket and stays awake while a match is open. It answers a client's close
 frame so that no half-closed socket keeps it awake after the players have gone.
@@ -452,5 +467,9 @@ must be equal: `node host/replay.mjs match.json` checks exactly that.
   always show the same letters.
 - **A hardware client.** `hardware/ref.c` is a whole client in 50 lines: a packet into
   `ppu_apply`, the OP buffer out of `ppu_view(tick)`, and `hardware/raster.c` to draw it with
-  integers only. `make hardware` runs it for every game. A board adds a socket, a display and
-  buttons around the same three calls.
+  integers only. `make hardware` runs it for every game. `hardware/esp32/` puts a socket, a display
+  and buttons around the same three calls for an ESP32 board.
+- **An FPGA client.** `fpga/ppu_line.v` draws the OP buffer one screen line at a time, slot by slot
+  in layer order, into a line buffer the display reads. A small processor beside it runs `ppu.c` and
+  hands it the OP buffer once per tick. It draws filled rectangles today; each other shape is one more
+  case that says which pixels of the line it covers, and `hardware/raster.c` already has the rules.

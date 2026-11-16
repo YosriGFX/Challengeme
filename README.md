@@ -78,7 +78,8 @@ macOS: `brew install llvm lld`, then `make WASM_CC=$(brew --prefix llvm)/bin/cla
 
 In `public/`: `index.html`, `style.css`, `main.js` (lobby, HOME, wiring), `screen.js` (memory map,
 time, drawing), `pad.js` (controller), `net.js` (the input thread, owns the WebSocket),
-`sound.js` + `chip.js` (the sound chip), `sw.js`, `ppu.wasm`, `console.ttf`.
+`sound.js` + `chip.js` (the sound chip), `local.js` + `match.mjs` (a match hosted on the phone),
+`ledger.js` (signing a result with a wallet), `sw.js`, `ppu.wasm`, `console.ttf`.
 
 ## The games
 
@@ -154,7 +155,11 @@ The second command runs the record again on a fresh cartridge and says whether i
 same picture; it also prints the SHA-256 of the cartridge and of the log.
 `evm/MatchLedger.sol` is a contract that records a result signed by both players together with
 those two hashes, so a turn-based match can be settled on an EVM chain and audited off it.
-The contract has not been compiled or deployed, and the client has no wallet to sign with.
+With a wallet in the browser, HOME offers **SIGN RESULT** once a match is over: the client asks
+the contract for the 32 bytes that stand for the result, the wallet signs them, and the match keeps
+both players' signatures next to its record (`POST /api/sign/<cart>/<room>`). Set `LEDGER_ADDRESS`
+and `LEDGER_CHAIN_ID` in `worker/wrangler.toml` once the contract is deployed.
+The contract has not been compiled or deployed, and the wallet side has never run.
 
 ## iPhone
 
@@ -207,9 +212,13 @@ Client to server: `IN` 0x01 `[byte][tick on screen]`, `SYS` 0x02 `[code]`, `RESY
 - **The same account on another device.** LINK A DEVICE in the lobby shows a code of 8 letters,
   good once and for 5 minutes. The other device enters it and becomes that account; what it already
   owned moves over. No e-mail and no password are involved.
-- **Without the internet:** run `node host/sim.mjs` on any machine of a local network and
-  open its address on the phones. A single phone on its own cannot play: a game exists only on
-  a server, and the games have no computer opponent.
+- **Without the internet, on a local network:** run `node host/sim.mjs` on any machine and open
+  its address on the phones.
+- **Without any network, on one phone:** a game whose manifest says `"offline": true` (today Dama,
+  which hides nothing) may be kept on a device by a player allowed to play it. The lobby then offers
+  it **ON THIS PHONE**: `public/local.js` hosts the match on the phone with the same `host/match.mjs`
+  the server runs, holds both seats, and turns the board to whoever must move. Every other game stays
+  on the server and is never sent to a device. A cartridge says whose move it is with `cart_turn()`.
 
 ## Writing a cartridge
 
@@ -229,7 +238,10 @@ Use fixed slot numbers for things that persist, so a change costs one slot.
   through the C client and the stroke font.
 - **Not checked:** no browser was started for this version and it has no test suite, by request.
   A real iPhone, a real `wrangler deploy`, and a real Stripe payment have not been tried.
-- **Written but never run:** `hardware/esp32/main/main.c` (no ESP-IDF, no board) and
-  `evm/MatchLedger.sol` (no Solidity compiler was allowed in this session).
-- **Not built:** an FPGA client; wallets and signing in the client for the ledger; play on a
-  single phone with no network (it would need computer opponents, or the game on the device).
+- **Run once:** the Worker under `wrangler dev`, twice: accounts, catalog, prices, the purchase
+  gate, link codes, the origin check, the offline cartridge route, match records and signatures.
+- **Written but never run:** `hardware/esp32/main/main.c` (no ESP-IDF, no board; `make esp32-check`
+  only proves it is valid C), `evm/MatchLedger.sol` (the compiler download was not allowed),
+  `public/ledger.js` (no wallet, no browser), `fpga/ppu_line.v` (no Verilog tool).
+- **Started, not finished:** the FPGA client draws filled rectangles only; the other shapes and the
+  text are each one more case, with the integer rules already in `hardware/raster.c`.
