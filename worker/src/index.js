@@ -2,6 +2,8 @@
 //
 //   GET  /                        the client (static files from public/, see wrangler.toml)
 //   POST /api/session             who am I: makes this device's account on the first visit
+//   POST /api/link                a one-time code that puts this account on another device
+//   POST /api/link/use            { code }: this device becomes that account
 //   GET  /api/carts               the catalog, with price and whether this user may play
 //   WS   /match/<cart>/<room>     upgraded here, then handed to that match's Durable Object
 //   POST /api/buy                 { cart } -> { url } of a Stripe Checkout page
@@ -39,6 +41,7 @@ const CARTS = {
 const known = (cart) => typeof cart === 'string' && Object.hasOwn(CARTS, cart);      // "constructor" is not a game
 
 const COOKIE = 'op_session', YEAR = 365 * 24 * 3600;
+const LINK_SECONDS = 300, LINK_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';      // no 0/O, 1/I: easy to read aloud
 const enc = new TextEncoder();
 const now = () => Math.floor(Date.now() / 1000);
 const registry = (env) => env.REGISTRY.get(env.REGISTRY.idFromName('console'));
@@ -82,14 +85,37 @@ async function userOf(c) {
 // ---------------------------------------------------------------- routes
 const app = new Hono();
 
-app.post('/api/session', async (c) => {
-  let user = await userOf(c);
-  if (!user) user = b64url(crypto.getRandomValues(new Uint8Array(16)));
-  await registry(c.env).enter(user);
+async function setSession(c, user) {
   setCookie(c, COOKIE, await sign(c.env, user, now() + YEAR), {
     httpOnly: true, sameSite: 'Lax', path: '/', maxAge: YEAR,          // HttpOnly: page scripts cannot read it
     secure: new URL(c.req.url).protocol === 'https:',                  // plain http only happens in local development
   });
+}
+
+app.post('/api/session', async (c) => {
+  let user = await userOf(c);
+  if (!user) user = b64url(crypto.getRandomValues(new Uint8Array(16)));
+  await registry(c.env).enter(user);
+  await setSession(c, user);
+  return c.json({ user });
+});
+
+// ---- the same account on another device, with no e-mail and no password: the device that
+// is signed in shows a code, the other device types it. A code works once, for 5 minutes.
+// What the second device already owned moves to the account it joins.
+app.post('/api/link', async (c) => {
+  const user = await userOf(c);
+  if (!user) return c.text('no session', 401);
+  return c.json({ code: await registry(c.env).linkCode(user), seconds: LINK_SECONDS });
+});
+
+app.post('/api/link/use', async (c) => {
+  const { code } = await c.req.json().catch(() => ({}));
+  const clean = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (clean.length !== 8) return c.text('unknown code', 404);
+  const user = await registry(c.env).redeem(clean, await userOf(c));
+  if (!user) return c.text('unknown code', 404);
+  await setSession(c, user);
   return c.json({ user });
 });
 
@@ -211,6 +237,7 @@ export class RegistryDO extends DurableObject {
     this.sql.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, created INTEGER NOT NULL)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS carts (id TEXT PRIMARY KEY, price_cents INTEGER NOT NULL DEFAULT 0, listed INTEGER NOT NULL DEFAULT 1)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS owned (user TEXT NOT NULL, cart TEXT NOT NULL, at INTEGER NOT NULL, source TEXT NOT NULL, PRIMARY KEY (user, cart))');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS links (code TEXT PRIMARY KEY, user TEXT NOT NULL, expires INTEGER NOT NULL)');
   }
   #all(query, ...args) { return this.sql.exec(query, ...args).toArray(); }
 
@@ -238,6 +265,26 @@ export class RegistryDO extends DurableObject {
     if (!this.#all('SELECT 1 AS x FROM users WHERE id = ?', user).length) return false;
     this.sql.exec('INSERT OR IGNORE INTO owned (user, cart, at, source) VALUES (?, ?, ?, ?)', user, cart, now(), String(source).slice(0, 80));
     return true;
+  }
+  // A fresh one-time code for this user. Any older code of theirs stops working.
+  linkCode(user) {
+    this.sql.exec('DELETE FROM links WHERE user = ? OR expires < ?', user, now());
+    let code = '';
+    for (const b of crypto.getRandomValues(new Uint8Array(8))) code += LINK_LETTERS[b & 31];
+    this.sql.exec('INSERT INTO links (code, user, expires) VALUES (?, ?, ?)', code, user, now() + LINK_SECONDS);
+    return code;
+  }
+  // Use a code. Returns the account it belongs to, or null. `from` is the account this
+  // device had until now: what it owned moves over.
+  redeem(code, from) {
+    const row = this.#all('SELECT user FROM links WHERE code = ? AND expires >= ?', code, now())[0];
+    if (!row) return null;
+    this.sql.exec('DELETE FROM links WHERE code = ?', code);
+    if (from && from !== row.user) {
+      this.sql.exec('UPDATE OR IGNORE owned SET user = ? WHERE user = ?', row.user, from);
+      this.sql.exec('DELETE FROM owned WHERE user = ?', from);
+    }
+    return row.user;
   }
   setCart(cart, price, listed) {
     this.sql.exec('INSERT OR IGNORE INTO carts (id) VALUES (?)', cart);

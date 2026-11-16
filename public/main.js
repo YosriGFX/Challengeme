@@ -212,13 +212,31 @@ async function buy(cart) {
   $('hint').textContent = 'NOT FOR SALE YET';
 }
 
+// The same account on another device: this device shows a code, the other one types it.
+const post = (url, body) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
+async function showLinkCode() {
+  try {
+    const r = await post('/api/link');
+    if (r.ok) { const { code } = await r.json(); $('hint').textContent = `CODE ${code.slice(0, 4)}-${code.slice(4)} · 5 MINUTES`; return; }
+  } catch {}
+  $('hint').textContent = 'NOT AVAILABLE HERE';
+}
+async function useLinkCode() {
+  const code = prompt('CODE FROM YOUR OTHER DEVICE');
+  if (!code) return;
+  try { if ((await post('/api/link/use', { code })).ok) { await loadLobby(); $('hint').textContent = 'THIS DEVICE IS LINKED'; return; } } catch {}
+  $('hint').textContent = 'UNKNOWN CODE';
+}
+
 async function loadLobby() {
   await session();
   let carts = [];
   try { const r = await fetch('/api/carts'); if (r.ok) carts = await r.json(); } catch {}
-  lobby.set(carts.map((c) => (c.owned === false
+  const rows = carts.map((c) => (c.owned === false
     ? { text: c.name, note: `${(c.price_cents / 100).toFixed(2)} ${(c.currency || '').toUpperCase()}`, cls: 'locked', act: () => buy(c.id) }
-    : { text: c.name, note: `${c.players}P · ${c.tick_hz} HZ`, act: () => startMatch(c.id) })));
+    : { text: c.name, note: `${c.players}P · ${c.tick_hz} HZ`, act: () => startMatch(c.id) }));
+  if (carts.length) rows.push({ text: 'LINK A DEVICE', note: 'SHOW CODE', act: showLinkCode }, { text: 'LINK A DEVICE', note: 'ENTER CODE', act: useLinkCode });
+  lobby.set(rows);
   $('hint').textContent = carts.length ? 'SAME ROOM = SAME MATCH' : 'NO CONNECTION';
 }
 
