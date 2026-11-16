@@ -244,6 +244,7 @@ async function loadLobby() {
 clearLabels();
 R = await screen.init($('lcd'));
 screen.configure(settings);
+document.fonts?.load('700 12px ConsoleFont').then(() => screen.configure(settings)).catch(() => {});     // draw again once the font is in
 pad = createPad({ onByte, onHome: () => toggleHome(), onTouch });
 const room = new URLSearchParams(location.search).get('room');
 if (room) $('room').value = room.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 12);

@@ -13,10 +13,14 @@
 #include "../sdk/console.h"
 #include "../sdk/wire.h"
 
+#ifdef __wasm__                  /* the browser build: no libc, and the functions are exports */
 void *memcpy(void *d, const void *s, unsigned long n) { u8 *a = d; const u8 *b = s; while (n--) *a++ = *b++; return d; }
 void *memset(void *d, int c, unsigned long n) { u8 *a = d; while (n--) *a++ = (u8)c; return d; }
-
 #define EXPORT(name) __attribute__((export_name(#name)))
+#else                            /* a device or a desktop: plain C functions (see hardware/) */
+#include <string.h>
+#define EXPORT(name)
+#endif
 
 typedef struct {                 /* changes with any packet */
   u8 ops[CON_SLOTS * CON_OP_SIZE];

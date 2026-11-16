@@ -28,6 +28,17 @@ dist/%.wasm: carts/%/*.c $(SDK)
 public/ppu.wasm: ppu/ppu.c sdk/console.h sdk/wire.h
 	$(WASM_CC) $(CFLAGS) $(LDFLAGS) -o $@ ppu/ppu.c
 
+# the console font and its C stroke table (needs: pip install fonttools)
+font:
+	python3 font/build.py
+
+# the reference client for hardware: draws a game's screen with integers only, no browser
+hardware: all
+	@mkdir -p hardware/out
+	$(CC) -O2 -Wall -Wextra -o hardware/out/ref hardware/ref.c hardware/raster.c ppu/ppu.c
+	@for g in $(CARTS); do node hardware/dump.mjs $$g 240 > hardware/out/$$g.bin && hardware/out/ref hardware/out/$$g.bin hardware/out/$$g.ppm 240; done
+	@echo "pictures: hardware/out/*.ppm"
+
 run:
 	PORT=$(PORT) node host/sim.mjs
 
@@ -39,5 +50,6 @@ deploy:
 
 clean:
 	rm -f dist/*.wasm public/ppu.wasm worker/src/carts/*.wasm
+	rm -rf hardware/out
 
-.PHONY: all run dev deploy clean
+.PHONY: all font hardware run dev deploy clean

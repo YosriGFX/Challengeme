@@ -72,11 +72,13 @@ macOS: `brew install llvm lld`, then `make WASM_CC=$(brew --prefix llvm)/bin/cla
 | `host/match.mjs` | one running match, the same file in the simulator and in the Durable Object | no |
 | `host/sim.mjs` | the local simulator, Node.js only | no |
 | `worker/` | Hono Worker, `MatchDO` (a match), `RegistryDO` (users, catalog, ownership) | no |
+| `font/build.py` | the console font: one table of strokes, built into `public/console.ttf` and `ppu/font.h` | no (only its build) |
+| `hardware/` | the reference client for a device: an integer-only rasterizer and a desktop program that uses it | no |
 | `public/` | **the only folder that is served** | yes |
 
 In `public/`: `index.html`, `style.css`, `main.js` (lobby, HOME, wiring), `screen.js` (memory map,
 time, drawing), `pad.js` (controller), `net.js` (the input thread, owns the WebSocket),
-`sound.js` + `chip.js` (the sound chip), `sw.js`, `ppu.wasm`.
+`sound.js` + `chip.js` (the sound chip), `sw.js`, `ppu.wasm`, `console.ttf`.
 
 ## The games
 
@@ -104,6 +106,32 @@ same arena).
   timing (Keys) judges against that tick, capped at 150 ms.
 - **Smooth playback.** For games at 20 Hz or more the client plays frames on its own steady clock,
   one tick plus the measured jitter behind the newest, and glides between two frames.
+
+## The console font
+
+`font/build.py` holds every glyph as a few straight strokes on a grid 4 wide and 6 high: one pen
+width, cut corners, capitals only (a small letter shows its capital). It writes `public/console.ttf`
+for the browser and `ppu/font.h`, the same strokes as a C table, for a client with no font engine.
+A glyph advances 0.6 em, like the monospace it replaced, so every text keeps its width.
+To go back to the system font, remove the `@font-face` rule at the top of `public/style.css`.
+
+```bash
+make font
+```
+
+Needs `pip install fonttools`.
+
+## A client without a browser
+
+```bash
+make hardware
+```
+
+This builds `hardware/out/ref` with your C compiler and draws one frame of every game into
+`hardware/out/<game>.ppm`. It is what a device does: the packet goes into `ppu/ppu.c` (the same
+file the browser runs as WASM), `ppu_view(tick)` gives the OP buffer at that tick, and
+`hardware/raster.c` draws it into RGB565 pixels with integers only, text included.
+A board adds three things around it: a WebSocket, a display to copy the frame to, and buttons.
 
 ## iPhone
 
@@ -150,6 +178,10 @@ Client to server: `IN` 0x01 `[byte][tick on screen]`, `SYS` 0x02 `[code]`, `RESY
   It never leaves the server.
 - **Accounts.** A device gets an account on its first visit, kept in a signed HttpOnly cookie.
   A seat in a match belongs to that account. A game with a price is refused before any socket exists.
+- **The same account on another device.** LINK A DEVICE in the lobby shows a code of 8 letters,
+  good once and for 5 minutes. The other device enters it and becomes that account; what it already
+  owned moves over. No e-mail and no password are involved.
+- **No offline play.** A game exists only on the server. Offline, the shell loads and says so.
 
 ## Writing a cartridge
 
@@ -165,9 +197,10 @@ Use fixed slot numbers for things that persist, so a change costs one slot.
 - **Checked here:** everything compiles with `-Wall -Wextra` and no warnings; the Worker bundles
   (`wrangler deploy --dry-run`); one run of all five games with two players and random input for
   1500 ticks: every packet parsed, and at every tick the picture the client derives from motion was
-  identical to a fresh full redraw by the server.
+  identical to a fresh full redraw by the server. `make hardware` drew all five games correctly
+  through the C client and the stroke font.
 - **Not checked:** no browser was started for this version and it has no test suite, by request.
   A real iPhone, a real `wrangler deploy`, and a real Stripe payment have not been tried.
-- **Not built:** the console font (a system monospace stands in; add an `@font-face` named
-  `ConsoleFont`), a login that follows a player to another device, an ESP32 / FPGA client,
-  offline play, the EVM idea for turn-based games.
+- **Not built:** the board-specific part of an ESP32 client (socket, display, buttons) and an FPGA
+  client: there is no such hardware here to build against. The EVM idea for turn-based games is
+  not started: it needs your description of what should run on a chain.

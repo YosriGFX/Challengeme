@@ -1,9 +1,12 @@
 /* The console shell: black, thin lines, few colors. The game screen is drawn from the OP buffer. */
 :root {
   --fg: #ECE9E4; --dim: #6f6d6a; --line: #2a2a2a; --accent: #FFB23F; --danger: #FF5A5A;
-  /* The console font: add an @font-face named "ConsoleFont" and it is used everywhere. */
+  /* Menus and game text use the console font; the system monospace only stands in while it loads. */
   --font: "ConsoleFont", ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
 }
+/* The console font (font/build.py). One weight for every weight asked, so no browser fakes a bold. */
+@font-face { font-family: "ConsoleFont"; src: url("console.ttf") format("truetype"); font-weight: 100 900; font-display: swap; }
+
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
 
 /* The page is pinned and takes no browser gesture at all: no zoom, no scroll, no bounce,

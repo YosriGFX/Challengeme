@@ -423,6 +423,8 @@ this user may play this game. Only then does it hand the socket to `MatchDO`.
 - **Users.** `POST /api/session` makes an account for the device on its first visit and sets a
   signed, HttpOnly cookie. Page scripts cannot read it and a client cannot forge it. The seat in
   a match is the user id plus the tab's id.
+- **Another device.** `POST /api/link` gives a signed-in device a code of 8 letters that works
+  once, for 5 minutes. `POST /api/link/use` on a second device makes it the same account.
 - **Catalog and ownership** live in `RegistryDO`, one Durable Object with its own SQLite: tables
   `users`, `carts` (price, listed) and `owned`. Nothing has to be created before the first deploy.
 - **Buying.** `POST /api/buy` asks Stripe for a Checkout page. Money never touches the Worker.
@@ -438,9 +440,10 @@ frame so that no half-closed socket keeps it awake after the players have gone.
 
 - **A new game.** Copy `book/tug.c`, give it a name, add it to `CARTS` in the `Makefile` and in
   `worker/src/index.js`.
-- **The console font.** Add an `@font-face` named `ConsoleFont` to `public/style.css`. The menus
-  and the game text both use it.
-- **A hardware client.** `ppu/ppu.c` is plain C with no browser in it. A device needs a socket,
-  `ppu_apply`, and a loop that draws `ppu_view(tick)` once per tick.
-- **A login that follows the player.** Sessions are made in one place, `POST /api/session`.
-  Whatever proves who a player is on a second device belongs there.
+- **The console font.** `font/build.py` is the font: a table of strokes. Change a glyph there and
+  run `make font`. It writes the browser's font and `ppu/font.h` together, so a device and a phone
+  always show the same letters.
+- **A hardware client.** `hardware/ref.c` is a whole client in 50 lines: a packet into
+  `ppu_apply`, the OP buffer out of `ppu_view(tick)`, and `hardware/raster.c` to draw it with
+  integers only. `make hardware` runs it for every game. A board adds a socket, a display and
+  buttons around the same three calls.
