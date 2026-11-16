@@ -90,10 +90,15 @@ server.on('upgrade', async (req, socket) => {
     due = Math.max(due, Date.now() + Math.random() * JITTER);
     setTimeout(() => frame(2, buf), due - Date.now());
   };
-  const conn = { view: -1, send: (bytes) => deliver(Buffer.from(bytes)), close: () => socket.destroy() };
+  const conn = { view: -1, send: (bytes) => deliver(Buffer.from(bytes)), close: () => { if (!socket.destroyed) socket.end(Buffer.from([0x88, 2, 0x03, 0xE8])); } };
 
   let match, closed = false, buf = Buffer.alloc(0);
   const close = () => { if (closed) return; closed = true; match?.leave(conn); socket.destroy(); };
+  const bye = () => {                                   // answer a close frame, then hang up: a clean close (1000)
+    if (closed) return;
+    closed = true; match?.leave(conn);
+    socket.end(Buffer.from([0x88, 2, 0x03, 0xE8]));
+  };
   socket.on('close', close);
   socket.on('error', close);
   socket.on('data', (chunk) => {
@@ -110,7 +115,7 @@ server.on('upgrade', async (req, socket) => {
       const payload = Buffer.from(buf.subarray(total - len, total));
       if (masked) { const k = buf.subarray(off, off + 4); for (let i = 0; i < len; i++) payload[i] ^= k[i & 3]; }
       buf = buf.subarray(total);
-      if (opcode === 8) return close();
+      if (opcode === 8) return bye();
       if (opcode === 9) frame(10, payload);
       else if (opcode === 2 && match) match.message(conn, payload);
     }

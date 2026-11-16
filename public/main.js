@@ -180,7 +180,7 @@ function onPacket(buf) {
       if (type === W_SFX) apu.sfx(R.sfx.subarray((x & 15) * 8, (x & 15) * 8 + 8));
       else if (x === 1) {
         const p = (y & 3) * PATTERN_SIZE;
-        apu.playMusic({ step: R.music[p] / 100, steps: R.music[p + 1], vol: R.music[p + 2], notes: R.music.slice(p + 3, p + 3 + R.music[p + 1] * 4) });
+        apu.playMusic({ step: R.music[p] / 100, steps: R.music[p + 1], vol: R.music[p + 2], notes: R.music.slice(p + 3, p + 3 + R.music[p + 1] * 4) }, (flags & F_RESET) !== 0);
       } else apu.stopMusic();
     }
   }
@@ -237,8 +237,9 @@ function updateInput() {
 }
 
 // Buttons: each finger holds at most one button, and sliding a finger moves it to the
-// button under it (roll from B to A without lifting).
-const fingers = new Map();                              // pointerId -> button name
+// button under it (roll from B to A without lifting). A finger that started on a button is
+// followed until it lifts, also across the gap between two buttons.
+const fingers = new Map();                              // pointerId -> button name, or null between buttons
 function buttonsChanged() {
   const on = new Set(fingers.values());
   held.a = on.has('a'); held.b = on.has('b');
@@ -247,16 +248,24 @@ function buttonsChanged() {
   updateInput();
 }
 function fingerAt(e) {
-  const name = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-btn]')?.dataset.btn ?? null;
-  const before = fingers.get(e.pointerId);
-  if (!name && before === undefined) return;
+  let name = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-btn]')?.dataset.btn ?? null;
+  const followed = fingers.has(e.pointerId), before = fingers.get(e.pointerId) ?? null;
+  if (!name && !followed) return;
   e.preventDefault();
-  if (name === before) return;
-  if (name === 'home') { if (before === undefined && e.type === 'pointerdown') toggleHome(); return; }
-  if (name) fingers.set(e.pointerId, name); else fingers.delete(e.pointerId);
+  if (name === 'home') {                                // HOME answers a fresh tap only, never a slide
+    if (!followed) { if (e.type === 'pointerdown') toggleHome(); return; }
+    name = null;
+  }
+  if (followed && name === before) return;
+  fingers.set(e.pointerId, name);
   buttonsChanged();
 }
-document.addEventListener('pointerdown', (e) => { apu.start(); fingerAt(e); });
+// Browsers start audio only inside a tap or a key press, and Safari counts the end of a
+// touch, not its start. Same events as Challengeme (public/play.js).
+for (const type of ['pointerdown', 'pointerup', 'touchend', 'keydown']) {
+  addEventListener(type, () => apu.start(), { capture: true, passive: true });
+}
+document.addEventListener('pointerdown', fingerAt);
 document.addEventListener('pointermove', (e) => { if (fingers.has(e.pointerId)) fingerAt(e); });
 const fingerUp = (e) => { if (fingers.delete(e.pointerId)) buttonsChanged(); };
 document.addEventListener('pointerup', fingerUp);
@@ -273,7 +282,10 @@ document.addEventListener('touchmove', (e) => { if (e.target.closest?.('.overlay
 let lastTouchEnd = 0;
 document.addEventListener('touchend', (e) => {         // two quick taps are never a zoom
   const now = Date.now();
-  if (now - lastTouchEnd < 350 && e.target.tagName !== 'INPUT') e.preventDefault();
+  // Not inside the lobby and HOME: there a cancelled touch would also cancel the tap itself,
+  // and quick taps on a menu row would do nothing. Their CSS (touch-action) already forbids
+  // the double-tap zoom.
+  if (now - lastTouchEnd < 350 && !e.target.closest?.('.overlay')) e.preventDefault();
   lastTouchEnd = now;
 }, { passive: false });
 
@@ -321,7 +333,12 @@ addEventListener('keyup', (e) => {
   updateInput();
 });
 addEventListener('blur', () => { held.keys.clear(); held.actions.clear(); fingers.clear(); held.a = held.b = false; held.touchDir = -1; knobAt = null; stickId = null; updateInput(); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) apu.start(); });
+// Back from the lock screen or another app: a phone can hold a socket that looks open but
+// is dead. The input thread checks it and reconnects at once if it has to.
+const wake = () => { if (document.hidden) return; apu.start(); if (inMatch) worker.postMessage({ t: 'wake' }); };
+document.addEventListener('visibilitychange', wake);
+addEventListener('pageshow', wake);
+addEventListener('online', wake);
 
 // ---------------------------------------------------------------- HOME overlay (system, trusted)
 function toggleHome(force) {
@@ -415,4 +432,5 @@ resize();
 loadLobby();
 if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
 
-window.opDebug = { shown, get bufferMs() { return bufferMs; } };   // for measuring smoothness from the console
+// for measuring and testing from the console: the picture being shown, and this client's own memory
+window.opDebug = { shown, get bufferMs() { return bufferMs; }, get mem() { return R; }, get byte() { return lastByte; }, get settings() { return settings; }, apu };

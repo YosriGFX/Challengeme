@@ -71,7 +71,9 @@ export class MatchDO extends DurableObject {
       if (e.data instanceof ArrayBuffer) match.message(conn, new Uint8Array(e.data));
       else if (e.data && e.data.arrayBuffer) e.data.arrayBuffer().then((b) => match.message(conn, new Uint8Array(b)));
     });
-    server.addEventListener('close', leave);
+    // The client's close frame must be answered, or its socket hangs in CLOSING and the
+    // connection keeps this Durable Object awake after the player has left.
+    server.addEventListener('close', () => { leave(); try { server.close(1000, 'bye'); } catch {} });
     server.addEventListener('error', leave);
 
     match.join(conn, url.searchParams.get('t') || crypto.randomUUID());

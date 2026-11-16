@@ -16,19 +16,24 @@ const waveFreq = (f) => clamp(2048 - 65536 / f, 0, 2047);
 export class Sound {
   constructor() {
     this.ctx = null; this.post = null; this.starting = false;
+    this.pending = null;                             // the context while the chip is still loading
     this.sound = true; this.musicOn = true;
     this.song = null; this.timer = null;
   }
 
   // Call from a tap or key handler: browsers allow audio to start only there.
+  // Safari also stops the context ("interrupted") after a call, the lock screen or another
+  // app's audio: any state but "running" gets a resume here.
   async start() {
-    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {}); return; }
+    const now = this.ctx ?? this.pending;
+    if (now) { if (now.state !== 'running') now.resume().catch(() => {}); return; }
     if (this.starting) return;
     this.starting = true;
     const AC = window.AudioContext ?? window.webkitAudioContext;
     if (!AC) return;
     let ctx;
     try { ctx = new AC({ latencyHint: 'interactive' }); } catch { ctx = new AC(); }
+    this.pending = ctx;
     const gain = ctx.createGain();
     gain.gain.value = 0.6;
     gain.connect(ctx.destination);
@@ -57,7 +62,7 @@ export class Sound {
       w.push(0, 0x30 + i, (a << 4) | b);
     }
     post({ writes: w });
-    this.ctx = ctx; this.post = post;
+    this.ctx = ctx; this.post = post; this.pending = null;
     if (this.song && this.musicOn) this.#startTimer();
   }
 
@@ -117,7 +122,11 @@ export class Sound {
   click() { if (this.sound) this.voice(1, 0, 84, 4, 0, 3, 0); }
 
   // song: { step: seconds, steps, vol, notes: Uint8Array(steps * 4) }, looped on the client's own clock
-  playMusic(song) {
+  // keep = true: if this very song is already playing, let it play on (a full dump after
+  // a resync repeats the music command; the player must not hear the song start over).
+  playMusic(song, keep = false) {
+    const s = this.song;
+    if (keep && s && s.step === song.step && s.steps === song.steps && s.vol === song.vol && s.notes.join() === song.notes.join()) return;
     this.song = song; this.step = 0;
     this.#stopTimer();
     if (this.musicOn) this.#startTimer();
