@@ -1,0 +1,25 @@
+{
+  // A Debian box for OP Console. Node (for npm and wrangler) is added on top; the prebuilt
+  // .wasm files are in the repo, so `node host/sim.mjs` and `npx wrangler dev` work without
+  // a C toolchain. (To also rebuild the .wasm with `make`, add clang + lld: see below.)
+  "name": "OP Console",
+  "image": "mcr.microsoft.com/devcontainers/base:bookworm",
+
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" }
+  },
+
+  // Install the Worker's dependencies, but run NO package's install scripts, then run the
+  // build scripts of only the two we trust: esbuild and workerd fetch their native binaries
+  // that way. Any other package's scripts stay blocked.
+  "postCreateCommand": "cd worker && npm install --ignore-scripts && npm rebuild esbuild workerd",
+
+  // `npx wrangler dev` / `node host/sim.mjs` listen on 8787; open the forwarded URL on a phone.
+  "forwardPorts": [8787],
+  "portsAttributes": {
+    "8787": { "label": "OP Console", "onAutoForward": "notify" }
+  }
+
+  // Want to rebuild the cartridges too? Uncomment:
+  // ,"onCreateCommand": "sudo apt-get update && sudo apt-get install -y clang lld"
+}
