@@ -1,0 +1,1 @@
+{ "id": "pong", "name": "PONG", "players": 2, "tick_hz": 60 }

@@ -1,0 +1,65 @@
+/* The console shell: black, thin lines, few colors. The game screen is drawn from the OP buffer. */
+:root {
+  --fg: #ECE9E4; --dim: #6f6d6a; --line: #2a2a2a; --accent: #FFB23F; --danger: #FF5A5A;
+  /* The console font: add an @font-face named "ConsoleFont" and it is used everywhere. */
+  --font: "ConsoleFont", ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+
+/* The page is pinned and takes no browser gesture at all: no zoom, no scroll, no bounce,
+   no selection. pad.js also cancels every touch default, so nothing is left to Safari. */
+html, body { position: fixed; inset: 0; width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; color: var(--fg);
+  font-family: var(--font); overscroll-behavior: none; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-text-size-adjust: 100%; }
+body { display: flex; justify-content: center; }
+#console, #console * { touch-action: none; }
+
+#console {
+  width: min(100vw, 430px, calc((100dvh - 16px) * 0.56)); min-width: 260px; height: 100%;
+  padding: max(10px, env(safe-area-inset-top)) 12px max(10px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+#screen { position: relative; width: 100%; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #000; }
+#lcd { width: 100%; height: 100%; display: block; }
+
+/* Lobby and HOME. Everything fits: rows share the height, nothing ever scrolls. */
+.overlay { position: absolute; inset: 0; background: #000; display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 12px 16px; }
+.overlay[hidden] { display: none; }
+.overlay h1 { margin: 0; font-size: 15px; letter-spacing: 3px; font-weight: 700; text-align: center; }
+.overlay .hint { margin: 0; font-size: 9px; letter-spacing: 1.5px; color: var(--dim); text-align: center; min-height: 11px; }
+.menu { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+.row { flex: 1 1 0; min-height: 0; max-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  border: 1px solid var(--line); border-radius: 4px; padding: 0 10px; font-size: 12px; letter-spacing: 1.5px; cursor: pointer; white-space: nowrap; overflow: hidden; }
+.row small { color: var(--dim); font-size: 10px; letter-spacing: 1px; }
+.row.focus { border-color: var(--accent); color: var(--accent); }
+.row.danger { color: var(--danger); }
+.row.locked { color: var(--dim); }
+.field { display: flex; align-items: center; gap: 10px; font-size: 11px; letter-spacing: 1.5px; color: var(--dim); }
+/* 16px on purpose: Safari zooms the whole page when a field with smaller text gets the focus. */
+.field input { flex: 1; min-width: 0; height: 34px; background: #000; color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 0 10px;
+  font: inherit; font-size: 16px; letter-spacing: 2px; text-transform: uppercase; touch-action: manipulation; user-select: text; -webkit-user-select: text; outline: none; }
+.field input:focus { border-color: var(--accent); }
+
+#status { display: flex; align-items: center; gap: 8px; font-size: 9px; letter-spacing: 1.5px; color: var(--dim); min-height: 12px; white-space: nowrap; }
+#led { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); }
+#led.on { background: var(--accent); }
+#stats { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.btn { display: flex; align-items: center; justify-content: center; cursor: pointer; }
+#actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.act { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; }
+.act .btn { width: 100%; height: 26px; border: 1.5px solid var(--dim); border-radius: 13px; }
+.act span { font-size: 9px; letter-spacing: 1px; height: 11px; white-space: nowrap; }
+.act.unused .btn { border-color: var(--line); }
+.btn.down { background: var(--fg); color: #000; border-color: var(--fg); }
+
+#pad { flex: 1; min-height: 150px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 4px; }
+#stick { position: relative; width: 46%; max-width: 190px; aspect-ratio: 1; border: 1.5px solid var(--dim); border-radius: 50%; }
+#knob { position: absolute; left: 50%; top: 50%; width: 40%; height: 40%; margin: -20% 0 0 -20%; border: 1.5px solid var(--fg); border-radius: 50%; background: #1c1c1c; pointer-events: none; will-change: transform; }
+#ab { position: relative; width: 46%; max-width: 180px; aspect-ratio: 1.25; }
+#ab .btn { position: absolute; width: 42%; aspect-ratio: 1; border: 1.5px solid var(--fg); border-radius: 50%; background: #141414; font-size: 17px; font-weight: 700; }
+#ab [data-btn="a"] { right: 0; top: 4%; }
+#ab [data-btn="b"] { left: 4%; bottom: 0; }
+
+#keys { margin: 0; font-size: 8px; letter-spacing: 1px; color: var(--line); text-align: center; }
+@media (hover: none) { #keys { display: none; } }

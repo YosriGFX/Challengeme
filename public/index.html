@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>OP Console</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main id="console">
+  <section id="screen">
+    <canvas id="lcd" width="512" height="512"></canvas>
+
+    <!-- Lobby: runs on the client, before any match exists. Stick + A work here too. -->
+    <div id="lobby" class="overlay">
+      <h1>OP CONSOLE</h1>
+      <div id="games" class="menu"></div>
+      <label class="field">ROOM <input id="room" maxlength="12" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="done" value="ROOM1"></label>
+      <p id="hint" class="hint">SAME ROOM = SAME MATCH</p>
+    </div>
+
+    <!-- HOME: drawn by the client above everything, outside the OP buffer.
+         A cartridge cannot draw it, fake it or block it. -->
+    <div id="home" class="overlay" hidden>
+      <h1>HOME</h1>
+      <div id="homemenu" class="menu"></div>
+    </div>
+  </section>
+
+  <div id="status"><span id="led"></span><span id="net">OFFLINE</span><span id="stats"></span></div>
+
+  <section id="actions">
+    <div class="act"><div class="btn" data-btn="home"></div><span>HOME</span></div>
+    <div class="act"><div class="btn" data-btn="act1"></div><span id="l2"></span></div>
+    <div class="act"><div class="btn" data-btn="act2"></div><span id="l3"></span></div>
+    <div class="act"><div class="btn" data-btn="act3"></div><span id="l4"></span></div>
+  </section>
+
+  <section id="pad">
+    <div id="stick"><div id="knob"></div></div>
+    <div id="ab">
+      <div class="btn" data-btn="b">B</div>
+      <div class="btn" data-btn="a">A</div>
+    </div>
+  </section>
+
+  <p id="keys">ARROWS / WASD = STICK &middot; Z / L = A &middot; X / K = B &middot; 1 = HOME &middot; 2 3 4 = BUTTONS</p>
+</main>
+<script type="module" src="main.js"></script>
+</body>
+</html>

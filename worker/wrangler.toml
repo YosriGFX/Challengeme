@@ -1,0 +1,35 @@
+name = "op-console"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+# Only the built client in public/ is served. No source, no cartridge.
+# Anything that is not a file there goes to the Worker.
+[assets]
+directory = "../public"
+
+# One MatchDO per running match (the CPU). One RegistryDO for the whole console:
+# users, the catalog and who owns what, in its own SQLite. Nothing to create by hand.
+[[durable_objects.bindings]]
+name = "MATCH"
+class_name = "MatchDO"
+
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "RegistryDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MatchDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["RegistryDO"]
+
+[vars]
+CURRENCY = "usd"
+
+# Secrets (npx wrangler secret put NAME). The console works without any of them:
+#   ADMIN_KEY              enables POST /api/admin/cart and /api/admin/grant
+#   STRIPE_SECRET_KEY      enables buying: POST /api/buy opens a Stripe Checkout page
+#   STRIPE_WEBHOOK_SECRET  enables POST /api/stripe, where Stripe reports a paid order
+#   SESSION_SECRET         optional: your own key for session cookies (one is made otherwise)
