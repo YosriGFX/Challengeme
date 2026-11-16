@@ -1,0 +1,9 @@
+{
+  "id": "dama",
+  "name": "DAMA",
+  "players": 2,
+  "tick_hz": 10,
+  "style": "board",
+  "labels": { "play": ["RESIGN", "DRAW", ""], "match_end": ["REMATCH", "", ""] },
+  "palette": { "primary": "#ECE9E4", "secondary": "#5CC8F0", "accent": "#FFB23F", "highlight": "#C9A7FF", "error": "#FF5A5A", "success": "#6BE38C", "spare": "#808080" }
+}

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>OP Console</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main id="console">
+  <section id="screen">
+    <canvas id="lcd" width="512" height="512" aria-label="Game screen"></canvas>
+
+    <!-- Lobby: runs on the client, before any match exists -->
+    <div id="lobby" class="overlay">
+      <h1>OP CONSOLE</h1>
+      <p class="sub">PICK A GAME</p>
+      <div id="carts" class="list"></div>
+      <label class="field">ROOM <input id="room" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" value="ROOM1"></label>
+      <p class="hint">Both players enter the same room. Open this page in a second tab to test.</p>
+    </div>
+
+    <!-- HOME overlay: drawn by the client above everything, outside the OP buffer.
+         A cartridge cannot draw it, fake it or block it. -->
+    <div id="home" class="overlay" hidden>
+      <h1>HOME</h1>
+      <div class="list">
+        <button data-act="resume">RESUME</button>
+        <button data-act="sound"></button>
+        <button data-act="music"></button>
+        <button data-act="bright"></button>
+        <button data-act="warm"></button>
+        <button data-act="smooth"></button>
+        <button data-act="resign" class="danger">RESIGN</button>
+        <button data-act="leave">LEAVE MATCH</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="status"><span id="led"></span><span id="net">OFFLINE</span><span id="stats"></span></div>
+
+  <section id="actions">
+    <div class="act"><button id="b1" data-btn="home" aria-label="Home"></button><span>HOME</span></div>
+    <div class="act"><button id="b2" data-btn="act1" aria-label="Action 2"></button><span id="l2"></span></div>
+    <div class="act"><button id="b3" data-btn="act2" aria-label="Action 3"></button><span id="l3"></span></div>
+    <div class="act"><button id="b4" data-btn="act3" aria-label="Action 4"></button><span id="l4"></span></div>
+  </section>
+
+  <section id="pad">
+    <div id="stick" aria-label="Stick"><div id="knob"></div></div>
+    <div id="ab">
+      <button id="bb" data-btn="b" aria-label="B">B</button>
+      <button id="ba" data-btn="a" aria-label="A">A</button>
+    </div>
+  </section>
+
+  <p id="keys">KEYS: ARROWS / WASD = STICK &middot; Z / L = A &middot; X / K = B &middot; 1 = HOME &middot; 2 3 4 = ACTIONS</p>
+</main>
+<script type="module" src="main.js"></script>
+</body>
+</html>

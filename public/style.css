@@ -1,0 +1,60 @@
+/* The console shell. The game screen itself is drawn from the OP buffer. */
+:root {
+  --fg: #ECE9E4; --dim: #6f6d6a; --line: #2a2a2a; --accent: #FFB23F; --danger: #FF5A5A;
+  /* Drop your console font next to this file and add an @font-face named "ConsoleFont". */
+  --font: "ConsoleFont", ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+/* No zoom, scroll or bounce: the page is pinned and the console handles every touch itself.
+   Safari also gets its gestures blocked in main.js. */
+html, body { position: fixed; inset: 0; width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; color: var(--fg); font-family: var(--font); overscroll-behavior: none; touch-action: none; }
+canvas, #pad, #actions, #stick, [data-btn] { touch-action: none; }
+body { display: flex; justify-content: center; user-select: none; -webkit-user-select: none; touch-action: none; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; touch-action: none; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+#console {
+  width: min(100vw, 430px, calc((100dvh - 16px) * 0.56)); min-width: 260px; height: 100%; margin: 0 auto;
+  padding: max(10px, env(safe-area-inset-top)) 12px max(10px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+#screen { position: relative; width: 100%; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #000; }
+#lcd { width: 100%; height: 100%; display: block; }
+
+.overlay { position: absolute; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 18px; overflow-y: auto; touch-action: pan-y; }
+.overlay[hidden] { display: none; }
+.overlay h1 { margin: 2px 0 0; font-size: 17px; letter-spacing: 3px; font-weight: 700; }
+.overlay .sub { margin: 0; font-size: 10px; letter-spacing: 2px; color: var(--dim); }
+.overlay .hint { margin: 0; font-size: 10px; line-height: 1.5; color: var(--dim); text-align: center; }
+.list { width: 100%; display: flex; flex-direction: column; gap: 6px; }
+.list button { width: 100%; border: 1px solid var(--line); border-radius: 4px; padding: 9px 10px; font-size: 12px; letter-spacing: 1.5px; text-align: left; display: flex; justify-content: space-between; touch-action: manipulation; }
+.list button:hover, .list button:active { border-color: var(--accent); color: var(--accent); }
+.list button small { color: var(--dim); font-size: 10px; }
+.list button.danger { color: var(--danger); }
+.field { width: 100%; display: flex; align-items: center; gap: 10px; font-size: 11px; letter-spacing: 1.5px; color: var(--dim); }
+.field input { flex: 1; min-width: 0; background: #000; color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; font: inherit; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; user-select: text; -webkit-user-select: text; }
+
+#status { display: flex; align-items: center; gap: 8px; font-size: 9px; letter-spacing: 1.5px; color: var(--dim); min-height: 12px; }
+#led { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); }
+#led.on { background: var(--accent); }
+#stats { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+#actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.act { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; }
+.act button { width: 100%; height: 26px; border: 1.5px solid var(--dim); border-radius: 13px; }
+.act span { font-size: 9px; letter-spacing: 1px; color: var(--fg); height: 11px; white-space: nowrap; }
+.act.unused button { border-color: var(--line); }
+.act.unused span { color: var(--line); }
+.act button.down, #ab button.down { background: var(--fg); color: #000; border-color: var(--fg); }
+
+#pad { flex: 1; min-height: 150px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 4px; }
+#stick { position: relative; width: 46%; max-width: 190px; aspect-ratio: 1; border: 1.5px solid var(--dim); border-radius: 50%; touch-action: none; }
+#knob { position: absolute; left: 50%; top: 50%; width: 40%; height: 40%; margin: -20% 0 0 -20%; border: 1.5px solid var(--fg); border-radius: 50%; background: #1c1c1c; pointer-events: none; will-change: transform; }
+#ab { position: relative; width: 46%; max-width: 180px; aspect-ratio: 1.25; }
+#ab button { position: absolute; width: 42%; aspect-ratio: 1; border: 1.5px solid var(--fg); border-radius: 50%; background: #141414; font-size: 17px; font-weight: 700; }
+#ba { right: 0; top: 4%; }
+#bb { left: 4%; bottom: 0; }
+
+#keys { margin: 0; font-size: 8px; letter-spacing: 1px; color: var(--line); text-align: center; }
+@media (hover: none) { #keys { display: none; } }

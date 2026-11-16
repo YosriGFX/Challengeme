@@ -1,0 +1,16 @@
+name = "op-console"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+# Only the built client in public/ is served. No source files, no cartridges.
+# Anything that is not a file there goes to the Worker.
+[assets]
+directory = "../public"
+
+[[durable_objects.bindings]]
+name = "MATCH"
+class_name = "MatchDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MatchDO"]

@@ -1,0 +1,9 @@
+{
+  "id": "pong",
+  "name": "PONG",
+  "players": 2,
+  "tick_hz": 60,
+  "style": "arcade",
+  "labels": { "play": ["", "", ""], "match_end": ["REMATCH", "", ""] },
+  "palette": { "primary": "#A6F3FF", "secondary": "#FF7DB8", "accent": "#FFE08A", "highlight": "#FFFFFF", "error": "#FF5A5A", "success": "#6BE38C", "spare": "#808080" }
+}

@@ -1,0 +1,1 @@
+{ "id": "flap", "name": "FLAP", "players": 2, "tick_hz": 60, "style": "2d flappy, shared screen" }
