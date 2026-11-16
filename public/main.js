@@ -248,6 +248,8 @@ document.fonts?.load('700 12px ConsoleFont').then(() => screen.configure(setting
 pad = createPad({ onByte, onHome: () => toggleHome(), onTouch });
 const room = new URLSearchParams(location.search).get('room');
 if (room) $('room').value = room.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 12);
+// Safari can leave a pinned page shifted after its keyboard closes: put it back.
+$('room').addEventListener('blur', () => window.scrollTo(0, 0));
 active = lobby;
 loadLobby();
 if (new URLSearchParams(location.search).has('paid')) {       // back from the shop: the payment may land a moment later

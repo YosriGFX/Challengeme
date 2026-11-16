@@ -51,10 +51,10 @@ export function createPad({ onByte, onHome, onTouch }) {
   // ---- buttons: a finger that starts on a button is followed until it lifts, so it can
   // roll from B to A, also across the gap between them
   function finger(e) {
+    const followed = fingers.has(e.pointerId);
+    if (!followed && e.type !== 'pointerdown') return;      // a mouse just passing over, or a finger that began elsewhere
     const el = document.elementFromPoint(e.clientX, e.clientY);
     let name = el?.closest('[data-btn]')?.dataset.btn ?? null;
-    const followed = fingers.has(e.pointerId);
-    if (!followed && e.type !== 'pointerdown') return;
     if (!followed) {
       if (!inField(e)) document.activeElement?.blur?.();    // a tap outside the room field closes the keyboard
       if (name === 'home') return onHome();                 // HOME answers a fresh tap only, never a slide
