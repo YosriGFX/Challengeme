@@ -160,8 +160,10 @@ The contract has not been compiled or deployed, and the client has no wallet to 
 The page takes no browser gesture at all. Every touch default is cancelled in `pad.js` (zoom, scroll,
 long-press menu, synthetic click); the only exception is the room field, whose text is 16 px so
 Safari does not zoom on focus. Menus never scroll: rows share the height. Audio is unlocked on the
-end of a touch and resumed after an interruption. Back from the lock screen, the socket is checked
-with a `RESYNC` and reopened if nothing answers in 2.5 s.
+end of a touch and resumed after an interruption. While a match is open the screen is kept awake,
+so a phone does not lock while its player thinks. Buttons are released when the page is hidden.
+Back from the lock screen, the socket is checked with a `RESYNC` and reopened if nothing answers
+in 2.5 s. A phone on its side is asked to be turned upright.
 
 ## Wire protocol
 

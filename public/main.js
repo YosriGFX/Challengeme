@@ -133,8 +133,19 @@ net.onmessage = (e) => {
   }
 };
 
+// While a match is open the screen stays on: a phone that dims and locks while its player
+// thinks about a move drops the socket and leaves the other player waiting. The browser
+// takes the lock back whenever the page is hidden, so it is asked for again on return.
+let awake = null;
+async function stayAwake(on) {
+  try {
+    if (on && !awake && navigator.wakeLock) { awake = await navigator.wakeLock.request('screen'); awake.addEventListener('release', () => { awake = null; }); }
+    else if (!on && awake) { const lock = awake; awake = null; await lock.release(); }
+  } catch { awake = null; }                  // not allowed right now (low battery mode, old browser): play goes on
+}
+
 // Back from the lock screen or another app: the network thread checks its socket.
-const wake = () => { if (document.hidden) return; apu.start(); if (inMatch) net.postMessage({ t: 'wake' }); };
+const wake = () => { if (document.hidden) return; apu.start(); if (inMatch) { stayAwake(true); net.postMessage({ t: 'wake' }); } };
 document.addEventListener('visibilitychange', wake);
 addEventListener('pageshow', wake);
 addEventListener('online', wake);
@@ -187,6 +198,7 @@ function startMatch(cart) {
   $('lobby').hidden = true; $('home').hidden = true;
   $('net').textContent = 'CONNECTING';
   screen.power(true);
+  stayAwake(true);
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   net.postMessage({ t: 'connect', url: `${proto}://${location.host}/match/${cart}/${room}?t=${tabId()}` });
 }
@@ -195,6 +207,7 @@ function leaveMatch() {
   inMatch = false; wire = 0;
   net.postMessage({ t: 'close' });
   apu.stop();
+  stayAwake(false);
   screen.power(false);
   clearLabels();
   $('home').hidden = true; $('lobby').hidden = false;
