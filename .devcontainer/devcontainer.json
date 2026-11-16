@@ -9,10 +9,10 @@
     "ghcr.io/devcontainers/features/node:1": { "version": "22" }
   },
 
-  // Install the Worker's dependencies, but run NO package's install scripts, then run the
-  // build scripts of only the two we trust: esbuild and workerd fetch their native binaries
-  // that way. Any other package's scripts stay blocked.
-  "postCreateCommand": "cd worker && npm install --ignore-scripts && npm rebuild esbuild workerd",
+  // Install the Worker's dependencies. esbuild and workerd run their install scripts here to
+  // fetch their native binaries (they are the only deps in this tree with scripts that do
+  // anything), so a plain install allows exactly those.
+  "postCreateCommand": "cd worker && npm install",
 
   // `npx wrangler dev` / `node host/sim.mjs` listen on 8787; open the forwarded URL on a phone.
   "forwardPorts": [8787],
