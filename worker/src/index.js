@@ -159,6 +159,16 @@ app.get('/match/:cart/:room', async (c) => {
   return c.env.MATCH.get(id).fetch(new Request(url, c.req.raw));       // the socket now belongs to the match
 });
 
+// The record of a running match: every input and its tick, and a fingerprint of the
+// picture. Only for games that hide nothing ("open" in the manifest): with the record and
+// the cartridge anyone could work out everything the game holds.
+app.get('/api/log/:cart/:room', async (c) => {
+  const { cart, room } = c.req.param();
+  if (!(await userOf(c))) return c.text('no session', 401);
+  if (!known(cart) || !CARTS[cart].info.open || !/^[A-Za-z0-9_-]{1,32}$/.test(room)) return c.text('no record for this game', 404);
+  return c.env.MATCH.get(c.env.MATCH.idFromName(cart + '/' + room)).fetch(new Request(`https://match/log/${cart}`));
+});
+
 // ---- buying: Stripe Checkout. The money never touches this Worker; Stripe tells us when
 // an order is paid, and only that message grants ownership.
 app.post('/api/buy', async (c) => {
@@ -305,6 +315,10 @@ export class MatchDO extends DurableObject {
     const url = new URL(request.url);
     const cart = url.pathname.split('/')[2];
     if (!known(cart)) return new Response('unknown game', { status: 404 });
+    if (url.pathname.startsWith('/log/')) {
+      if (!this.match) return new Response('no match is running', { status: 404 });
+      return Response.json({ cart, ...(await this.match).record() });
+    }
 
     this.match ??= Match.create(CARTS[cart].wasm).then((m) => {
       m.onEmpty = () => { this.match = null; };          // everyone left: the next join starts a fresh match

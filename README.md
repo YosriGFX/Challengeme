@@ -132,6 +132,28 @@ This builds `hardware/out/ref` with your C compiler and draws one frame of every
 file the browser runs as WASM), `ppu_view(tick)` gives the OP buffer at that tick, and
 `hardware/raster.c` draws it into RGB565 pixels with integers only, text included.
 A board adds three things around it: a WebSocket, a display to copy the frame to, and buttons.
+`hardware/esp32/` is that for an ESP32 with a 240 × 240 ST7789 display (ESP-IDF 5).
+It has not been compiled or run: there was no ESP-IDF and no board where it was written.
+
+## Match records
+
+A cartridge is deterministic, so a match is fully described by what went into it and when.
+`Match` keeps that log. For a game that hides nothing (`"open": true` in its manifest, today
+Dama) the record of a running match can be fetched and checked by anyone:
+
+```bash
+curl http://localhost:8787/api/log/dama/ROOM1 > match.json
+```
+
+```bash
+node host/replay.mjs match.json
+```
+
+The second command runs the record again on a fresh cartridge and says whether it ends in the
+same picture; it also prints the SHA-256 of the cartridge and of the log.
+`evm/MatchLedger.sol` is a contract that records a result signed by both players together with
+those two hashes, so a turn-based match can be settled on an EVM chain and audited off it.
+The contract has not been compiled or deployed, and the client has no wallet to sign with.
 
 ## iPhone
 
@@ -182,7 +204,9 @@ Client to server: `IN` 0x01 `[byte][tick on screen]`, `SYS` 0x02 `[code]`, `RESY
 - **The same account on another device.** LINK A DEVICE in the lobby shows a code of 8 letters,
   good once and for 5 minutes. The other device enters it and becomes that account; what it already
   owned moves over. No e-mail and no password are involved.
-- **No offline play.** A game exists only on the server. Offline, the shell loads and says so.
+- **Without the internet:** run `node host/sim.mjs` on any machine of a local network and
+  open its address on the phones. A single phone on its own cannot play: a game exists only on
+  a server, and the games have no computer opponent.
 
 ## Writing a cartridge
 
@@ -202,6 +226,7 @@ Use fixed slot numbers for things that persist, so a change costs one slot.
   through the C client and the stroke font.
 - **Not checked:** no browser was started for this version and it has no test suite, by request.
   A real iPhone, a real `wrangler deploy`, and a real Stripe payment have not been tried.
-- **Not built:** the board-specific part of an ESP32 client (socket, display, buttons) and an FPGA
-  client: there is no such hardware here to build against. The EVM idea for turn-based games is
-  not started: it needs your description of what should run on a chain.
+- **Written but never run:** `hardware/esp32/main/main.c` (no ESP-IDF, no board) and
+  `evm/MatchLedger.sol` (no Solidity compiler was allowed in this session).
+- **Not built:** an FPGA client; wallets and signing in the client for the ledger; play on a
+  single phone with no network (it would need computer opponents, or the game on the device).

@@ -438,6 +438,11 @@ this user may play this game. Only then does it hand the socket to `MatchDO`.
 `MatchDO` holds the WebSocket and stays awake while a match is open. It answers a client's close
 frame so that no half-closed socket keeps it awake after the players have gone.
 
+A match also keeps a log of everything that went into the cartridge and on which tick.
+`record()` returns it with a fingerprint of what every player sees, and `Match.replay()` runs
+a record again on a fresh cartridge. Because a cartridge is deterministic, the two fingerprints
+must be equal: `node host/replay.mjs match.json` checks exactly that.
+
 ## 18. Where to go next
 
 - **A new game.** Copy `book/tug.c`, give it a name, add it to `CARTS` in the `Makefile` and in

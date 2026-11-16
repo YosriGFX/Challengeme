@@ -6,6 +6,7 @@
 // send(Uint8Array) and close().
 
 const C_IN = 0x01, C_SYS = 0x02, C_RESYNC = 0x03;
+const LOG_SEAT = 0, LOG_IN = 1, LOG_SYS = 2, LOG_MAX = 100000;
 
 export class Match {
   // wasm: a WebAssembly.Module, or the bytes of one
@@ -23,7 +24,29 @@ export class Match {
     this.hz = 0;
     this.timer = null;
     this.onEmpty = null;                                  // called when the last connection has left
+    this.ticks = 0;                                       // ticks since the match was made
+    this.log = [];                                        // everything that went in: [tick, kind, seat, a, b]
   }
+
+  // The match as a record: what went into the cartridge and on which tick, and a
+  // fingerprint of what every player sees now. The cartridge is deterministic, so anyone
+  // with the same .wasm can run the record again and must get the same fingerprint.
+  record() { return { ticks: this.ticks, log: this.log, complete: this.log.length < LOG_MAX, digest: this.x.con_digest() >>> 0 }; }
+
+  // Run a record again on a fresh cartridge. Returns the fingerprint it ends with.
+  static async replay(wasm, rec) {
+    const m = await Match.create(wasm);
+    const run = (to) => { while (m.ticks < to) { m.x.con_tick(); m.ticks++; } };
+    for (const [tick, kind, seat, a, b] of rec.log) {
+      run(tick);
+      if (kind === LOG_SEAT) m.x.con_presence(seat, a);
+      else if (kind === LOG_IN) m.x.con_input(seat, a, b);
+      else if (kind === LOG_SYS) m.x.con_sys(seat, a);
+    }
+    run(rec.ticks);
+    return m.x.con_digest() >>> 0;
+  }
+  #note(kind, seat, a, b = 0) { if (this.log.length < LOG_MAX) this.log.push([this.ticks, kind, seat, a, b]); }
 
   // Seat a connection. `id` says who it is: the same id always gets its own seat back.
   // Returns the view: the seat number, or `players` for a spectator.
@@ -42,6 +65,7 @@ export class Match {
     this.seats[seat] = { id, conn };
     conn.view = seat;
     this.x.con_presence(seat, 1);
+    this.#note(LOG_SEAT, seat, 1);
     this.#flush(true, conn);
     return seat;
   }
@@ -51,6 +75,7 @@ export class Match {
     else if (conn.view >= 0 && this.seats[conn.view]?.conn === conn) {
       this.seats[conn.view].conn = null;
       this.x.con_presence(conn.view, 0);
+      this.#note(LOG_SEAT, conn.view, 0);
       this.#flush(true);
     }
     conn.view = -1;
@@ -64,13 +89,14 @@ export class Match {
     const seated = conn.view >= 0 && conn.view < this.players;
     if (bytes[0] === C_RESYNC) return this.#flush(true, conn);
     if (!seated || bytes.length < 2) return;
-    if (bytes[0] === C_IN) this.x.con_input(conn.view, bytes[1], bytes.length > 2 ? bytes[2] : 256);
-    else if (bytes[0] === C_SYS) this.x.con_sys(conn.view, bytes[1]);
+    const shown = bytes.length > 2 ? bytes[2] : 256;
+    if (bytes[0] === C_IN) { this.x.con_input(conn.view, bytes[1], shown); this.#note(LOG_IN, conn.view, bytes[1], shown); }
+    else if (bytes[0] === C_SYS) { this.x.con_sys(conn.view, bytes[1]); this.#note(LOG_SYS, conn.view, bytes[1]); }
     else return;
     this.#flush(true);
   }
 
-  tick() { this.x.con_tick(); this.#flush(false); }
+  tick() { this.x.con_tick(); this.ticks++; this.#flush(false); }
 
   // Give every view what changed for it. mid: this is not the flush of a tick (the client
   // must not read the server's clock from when it arrives). `whole` is one connection that

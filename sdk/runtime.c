@@ -139,6 +139,20 @@ EXPORT(con_input) void con_input(u32 player, u32 byte, u32 shown) {
 EXPORT(con_sys)  void con_sys(u32 player, u32 code) { if (player < cart_players) cart_sys((u8)player, (u8)code); }
 EXPORT(con_tick) void con_tick(void) { frame++; cart_tick(); }
 
+/* A fingerprint of everything any player can see right now. Two runs of the same cartridge
+ * fed the same inputs on the same ticks give the same number: that is what makes a match
+ * log checkable by anybody (host/replay.mjs). It changes nothing. */
+EXPORT(con_digest) u32 con_digest(void) {
+  u32 h = 2166136261u ^ frame;
+  for (u8 v = 0; v <= cart_players; v++) {
+    memset(&cur, 0, sizeof cur); moves = 0;
+    cart_draw(v);
+    const u8 *p = (const u8 *)&cur;
+    for (u32 i = 0; i < sizeof cur; i++) h = (h ^ p[i]) * 16777619u;
+  }
+  return h;
+}
+
 /* Build the packet for one view. how: bit 0 = a full dump (join, resync), bit 1 = made
  * between two ticks (anything but the flush right after con_tick).
  * Returns its length; 0 means this view has nothing to learn. */

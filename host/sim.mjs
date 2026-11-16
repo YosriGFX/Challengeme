@@ -29,6 +29,12 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname === '/api/carts') return json(res, catalog());
   if (url.pathname === '/api/session') return json(res, { user: 'local' });
+  const log = url.pathname.match(/^\/api\/log\/([a-z0-9_-]{1,32})\/([A-Za-z0-9_-]{1,32})$/);
+  if (log) {                                                 // the record of a running match, for games that hide nothing
+    const open = catalog().find((c) => c.id === log[1])?.open, running = matches.get(log[1] + '/' + log[2]);
+    if (!open || !running) { res.writeHead(404); return res.end(); }
+    return running.then((m) => json(res, { cart: log[1], ...m.record() }));
+  }
   let rel;
   try { rel = decodeURIComponent(url.pathname); } catch { rel = '/'; }
   const file = path.join(PUBLIC, path.normalize(rel === '/' ? '/index.html' : rel));
