@@ -72,6 +72,13 @@ server.on('upgrade', async (req, socket) => {
     socket.end('HTTP/1.1 404 Not Found\r\n\r\n');
     return;
   }
+  // like the Worker: only pages served by this host may open a match socket
+  let origin = null;
+  try { if (req.headers.origin) origin = new URL(req.headers.origin).host; } catch { origin = ''; }
+  if (origin !== null && origin !== req.headers.host) {
+    socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+    return;
+  }
   const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
   socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n');
   socket.setNoDelay(true);

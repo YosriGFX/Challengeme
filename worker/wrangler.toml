@@ -14,3 +14,15 @@ class_name = "MatchDO"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["MatchDO"]
+
+# ---- Accounts, catalog database and purchases: optional (see src/accounts.js) ----
+# Without this block every game is open to everyone, as before. To switch it on:
+#   npx wrangler d1 create op-console          then paste the database_id it prints below
+#   npx wrangler secret put SESSION_SECRET     any long random string
+#   npx wrangler secret put ADMIN_KEY          optional: enables POST /api/admin/*
+# For `wrangler dev`, put SESSION_SECRET and ADMIN_KEY in worker/.dev.vars (see .dev.vars.example).
+#
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "op-console"
+# database_id = "00000000-0000-0000-0000-000000000000"

@@ -206,7 +206,10 @@ worker.onmessage = (e) => {
   const m = e.data;
   if (m.t === 'pkt') { if (inMatch) onPacket(m.buf); }
   else if (m.t === 'open') { $('led').classList.add('on'); $('net').textContent = 'ONLINE'; }
-  else if (m.t === 'close') { $('led').classList.remove('on'); $('net').textContent = inMatch ? 'RECONNECTING' : 'OFFLINE'; }
+  else if (m.t === 'close') {
+    $('led').classList.remove('on'); $('net').textContent = inMatch ? 'RECONNECTING' : 'OFFLINE';
+    if (inMatch) session();                              // a lost session cookie would refuse every retry
+  }
 };
 
 // ---------------------------------------------------------------- controller -> input byte
@@ -405,18 +408,24 @@ function leaveMatch() {
   requestDraw();
 }
 
+// Where the server has accounts switched on, this makes (or renews) the guest session
+// cookie. Anywhere else the route does not exist and nothing happens.
+const session = () => fetch('/api/session', { method: 'POST' }).catch(() => {});
+
 async function loadLobby() {
   let carts = [{ id: 'dama', name: 'DAMA', players: 2, tick_hz: 1 }, { id: 'pong', name: 'PONG', players: 2, tick_hz: 60 }];
+  await session();
   try { const r = await fetch('/api/carts'); if (r.ok) carts = await r.json(); } catch {}
   const box = $('carts');
   box.textContent = '';
   for (const c of carts) {
+    const locked = c.owned === false;                    // a game this player has not bought: the server would refuse it
     const b = document.createElement('button');
     b.textContent = c.name;
     const s = document.createElement('small');
-    s.textContent = `${c.players}P · ${c.tick_hz} HZ`;
+    s.textContent = `${c.players}P · ${c.tick_hz} HZ` + (locked ? ' · LOCKED' : '');
     b.appendChild(s);
-    b.addEventListener('click', () => startMatch(c.id));
+    if (locked) b.classList.add('locked'); else b.addEventListener('click', () => startMatch(c.id));
     box.appendChild(b);
   }
   const room = new URLSearchParams(location.search).get('room');

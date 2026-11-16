@@ -1,0 +1,4 @@
+# Copy to .dev.vars for `wrangler dev` with accounts switched on (see wrangler.toml).
+# .dev.vars is never committed. In production these are `wrangler secret put` values.
+SESSION_SECRET=change-me-to-a-long-random-string
+ADMIN_KEY=change-me-too
