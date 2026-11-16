@@ -14,6 +14,7 @@ const A_KEYS = ['KeyZ', 'KeyJ', 'KeyL', 'Enter', 'Space'], B_KEYS = ['KeyX', 'Ke
 // onByte(byte): the register changed.  onHome(): button 1.  onTouch(element): a tap or click landed.
 export function createPad({ onByte, onHome, onTouch }) {
   const stick = document.getElementById('stick'), knob = document.getElementById('knob');
+  const buttons = [...document.querySelectorAll('[data-btn]')];
   const keys = new Set();                    // held stick keys
   const fingers = new Map();                 // pointer id -> button name, or null while between buttons
   let keyA = false, keyB = false;
@@ -41,7 +42,7 @@ export function createPad({ onByte, onHome, onTouch }) {
     const next = (dir >= 0 ? 8 | dir : 0) | (a ? 0x10 : 0) | (b ? 0x20 : 0) | (action << 6);
 
     knob.style.transform = knobAt ? `translate(${knobAt[0]}px, ${knobAt[1]}px)` : dir >= 0 ? `translate(${KNOB[dir][0] * 55}%, ${KNOB[dir][1] * 55}%)` : '';
-    for (const el of document.querySelectorAll('[data-btn]')) {
+    for (const el of buttons) {
       const n = el.dataset.btn;
       el.classList.toggle('down', n === 'a' ? a : n === 'b' ? b : n.startsWith('act') && action === Number(n[3]));
     }
@@ -122,10 +123,16 @@ export function createPad({ onByte, onHome, onTouch }) {
     else return;
     update();
   });
-  addEventListener('blur', () => {                           // the window lost the keys: nothing stays held
+  // Nothing stays held when the page loses the player: the window lost the keys, or the
+  // phone went to another app or the lock screen with a finger still down. Safari does not
+  // always send the end of that touch.
+  const release = () => {
     keys.clear(); keyActs.clear(); fingers.clear(); keyA = keyB = false; touchDir = -1; knobAt = null; stickId = null;
     update();
-  });
+  };
+  addEventListener('blur', release);
+  addEventListener('pagehide', release);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
 
   return { get byte() { return byte; } };
 }

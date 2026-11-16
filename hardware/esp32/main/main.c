@@ -12,7 +12,9 @@
  * packet to the PPU, draw the OP buffer about 30 times a second at the server's tick,
  * and send the input byte when a button changes.
  */
+#include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
