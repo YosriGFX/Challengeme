@@ -34,7 +34,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .list button.danger { color: var(--danger); }
 .list button.locked, .list button.locked:hover, .list button.locked:active { color: var(--dim); border-color: var(--line); cursor: default; }
 .field { width: 100%; display: flex; align-items: center; gap: 10px; font-size: 11px; letter-spacing: 1.5px; color: var(--dim); }
-.field input { flex: 1; min-width: 0; background: #000; color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; font: inherit; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; user-select: text; -webkit-user-select: text; }
+/* 16px on purpose: Safari zooms the whole page when an input with smaller text gets the focus,
+   and with every zoom gesture blocked there is no way back out. */
+.field input { flex: 1; min-width: 0; background: #000; color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; font: inherit; font-size: 16px; letter-spacing: 2px; text-transform: uppercase; user-select: text; -webkit-user-select: text; }
 
 #status { display: flex; align-items: center; gap: 8px; font-size: 9px; letter-spacing: 1.5px; color: var(--dim); min-height: 12px; }
 #led { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); }
