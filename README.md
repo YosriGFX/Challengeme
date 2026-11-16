@@ -145,17 +145,66 @@ Measured here: Dama full dump on join â‰ˆ 0.9 KB, one cursor move = 14 B. Pong â
 - The input worker gets input by `postMessage`, not a SharedArrayBuffer yet (no COOP/COEP headers needed).
 - The console font is a system monospace placeholder. Add your font as `ConsoleFont` in `public/style.css`.
 
+## Tests
+
+```
+make test                          # 84 checks, needs only Node.js 18+
+node tests/e2e/browser.mjs         # two touch phones in Chromium play all four games (needs Playwright)
+node tests/e2e/accounts.mjs        # users / catalog / purchases against wrangler dev (needs: cd worker && npm install)
+node tools/sounds.mjs out/         # one .wav per sound and music pattern, to listen without a phone
+```
+
+| File | What it checks |
+|---|---|
+| `tests/dama.test.mjs` | 39 rule checks on set-up positions, played through the real input byte |
+| `tests/engine.test.mjs` | wire protocol, atomic packets, transitions, deltas = full dump under random play, 6 private views, match host |
+| `tests/carts.test.mjs` | Pong, Flap, Keys played to the end by bots that see only their own view; same pipes / same song for both |
+| `tests/client.test.mjs` | the input thread: input only on change, reconnect, dead-socket check on wake-up |
+| `tests/sound.test.mjs` | every preset at its pitch and length, no clipping |
+
+`tests/dama_harness.c` and `tests/carts/six.c` (a 6-seat test cartridge, not a game) are built by `make`
+into `tests/build/`. They are never served and never copied into the Worker.
+
+## Accounts, catalog, purchases (PROPOSAL, off by default)
+
+`worker/src/accounts.js`. It is switched on by configuration only: uncomment the D1 block in
+`worker/wrangler.toml` and set `SESSION_SECRET` (steps are written there). Without it, every game is
+open to everyone, exactly as before.
+
+- **Users**: a guest account on first visit, kept in a signed HttpOnly cookie. No e-mail, no password.
+- **Catalog**: table `carts` holds price and listed / unlisted. The games stay inside the Worker.
+- **Purchases**: table `owned`. A game with a price is refused by the Worker (403) before any socket
+  exists, so a locked game sends nothing to the device. The lobby shows it as `LOCKED`.
+- **Seats** are tied to the verified user, so a client cannot claim another player's seat.
+- **No payment provider.** `grant()` is the one function a payment webhook must call. By hand:
+  `POST /api/admin/grant {user, cart}` and `POST /api/admin/cart {cart, price_cents, listed}`
+  with `Authorization: Bearer <ADMIN_KEY>`.
+
+## Fixed in this revision
+
+- The Durable Object never answered a client's close frame: the socket hung and kept the object awake.
+- Quick taps on HOME / lobby rows were swallowed by the double-tap-zoom guard.
+- A finger rolling from B to A was dropped in the gap between the buttons.
+- Audio unlock now also happens on touch end (Safari), and resumes from Safari's "interrupted" state.
+- Back from the lock screen: a dead socket is detected (RESYNC, 2.5 s) and reopened at once.
+- `/match/constructor/x` returned 500; match sockets are now refused from other sites (Origin).
+- PPU: a tick above 60 Hz is malformed; labels are kept to printable ASCII.
+
 ## Not built yet
 
-- Auth, users, catalog database, purchases (the place for them is marked in `worker/src/index.js`).
-- Durable Object hibernation for 0 Hz games (it needs the WASM memory saved to storage first).
-- Motion OPs / client interpolation, and latency compensation for reaction games.
-- More than 2 players per cartridge (the runtime supports 6 views; no cartridge uses them yet).
+- A real login and a payment provider (the accounts skeleton above has the hooks for both).
+- Durable Object hibernation (decided: the object stays awake while a match is open).
+- Motion OPs and latency compensation. Not started on purpose: they change the hardware contract
+  (wire + memory map), and latency compensation goes against "network speed is not our problem".
+- A game with more than 2 players. The engine side is proven with the 6-seat test cartridge.
+- The console font, ESP32 / FPGA client, offline mode, EVM.
 
 ## Tested / not tested
 
-- **Tested**: the build; the Dama rules (25 checks on set-up positions); Flap scoring with a bot;
-  all four games played by two players in Chrome on a phone-sized touch screen; smoothness under
-  simulated jitter (table above); every sound type rendered through the chip without errors.
-- **Not tested**: real iPhone Safari, how the sound actually sounds, and `wrangler dev` after this
-  revision. The Worker code only changed in what folder it serves.
+- **Tested here**: `make` rebuilds every `.wasm` bit-for-bit; `make test`; all four games on two emulated
+  touch phones (Chromium) against the simulator and against `wrangler dev` (Worker + Durable Object);
+  smooth playback under 0 to 40 ms jitter (frozen frames 34.6% to 0.6%, jumps 4.9% to 0.0%);
+  accounts against `wrangler dev` with a local D1; `wrangler deploy --dry-run` (the bundle builds).
+- **Not tested**: a real iPhone Safari (zoom, stick feel, 60 Hz, audio unlock); how the sound sounds
+  to a human ear (pitch and level are measured, taste is not); a real `wrangler deploy` (no Cloudflare
+  account here); a real D1 database in production.
