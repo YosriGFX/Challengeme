@@ -25,6 +25,7 @@ let R = null, pad = null;
 let inMatch = false, online = false;
 let wire = 0, count = 0;                     // the byte the server has, and inputs sent since the socket opened
 let active = null;                           // the open menu (lobby or HOME), or null while playing
+let stuck = 0;                               // A / B still held from a menu: the game does not see them until released
 
 // ---------------------------------------------------------------- menus: stick + A / B, or a tap
 function makeMenu(box, back) {
@@ -72,7 +73,7 @@ function toGame(byte) {
 }
 function onByte(byte, prev) {
   if (active) menuInput(byte, prev);         // a menu is open: the cartridge sees nothing
-  else if (inMatch) toGame(byte);
+  else if (inMatch) { stuck &= byte; toGame(byte & ~stuck); }
 }
 function onTouch(el) {
   const row = el.closest('[data-row]');
@@ -163,7 +164,7 @@ function toggleHome(open = $('home').hidden) {
   $('home').hidden = !open;
   resignArmed = false;
   if (open) { toGame(0); active = home; home.focus = 0; home.set(homeRows()); }      // the cartridge sees every button released
-  else { active = null; toGame(pad.byte); }
+  else { active = null; stuck = pad.byte & 0x30; toGame(pad.byte & ~stuck); }
 }
 
 // ---------------------------------------------------------------- lobby
@@ -182,7 +183,7 @@ function startMatch(cart) {
   const room = ($('room').value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') || 'ROOM1').slice(0, 12);
   $('room').value = room;
   try { history.replaceState(null, '', `?room=${room}`); } catch {}
-  inMatch = true; active = null; wire = 0;
+  inMatch = true; active = null; wire = 0; stuck = pad.byte & 0x30;
   $('lobby').hidden = true; $('home').hidden = true;
   $('net').textContent = 'CONNECTING';
   screen.power(true);

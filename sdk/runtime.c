@@ -139,9 +139,11 @@ EXPORT(con_input) void con_input(u32 player, u32 byte, u32 shown) {
 EXPORT(con_sys)  void con_sys(u32 player, u32 code) { if (player < cart_players) cart_sys((u8)player, (u8)code); }
 EXPORT(con_tick) void con_tick(void) { frame++; cart_tick(); }
 
-/* Build the packet for one view. full = 1 on join and resync.
+/* Build the packet for one view. how: bit 0 = a full dump (join, resync), bit 1 = made
+ * between two ticks (anything but the flush right after con_tick).
  * Returns its length; 0 means this view has nothing to learn. */
-EXPORT(con_flush) u32 con_flush(u32 view, u32 full) {
+EXPORT(con_flush) u32 con_flush(u32 view, u32 how) {
+  u32 full = how & 1;
   if (view >= CON_MAX_VIEWS) return 0;
   Screen *h = &held[view];
   u8 bit = (u8)(1u << view);
@@ -151,6 +153,8 @@ EXPORT(con_flush) u32 con_flush(u32 view, u32 full) {
 
   out_n = 0;
   put(W_FRAME); put((u8)frame); put((u8)(frame >> 8));
+  if (how & 2) put(W_MID);
+  u32 head = out_n;
   if (full) {
     put(W_RESET);
     memset(h, 0, sizeof *h);
@@ -218,5 +222,5 @@ EXPORT(con_flush) u32 con_flush(u32 view, u32 full) {
   for (u8 i = 0; i < sfx_n[view]; i++) { put(W_SFX); put(sfx_q[view][i]); }
   sfx_n[view] = 0;
 
-  return out_n > 3 ? out_n : 0;             /* a packet with only its tick stamp says nothing */
+  return out_n > head ? out_n : 0;          /* a packet with only its tick stamp says nothing */
 }

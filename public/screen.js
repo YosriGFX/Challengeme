@@ -12,7 +12,7 @@
 //   - move the slots bound to the player's own stick at once, without the round trip.
 // None of this decides anything about the game: the server's packets always win.
 
-export const F = { DRAW: 1, TRANS: 2, EVENT: 4, RESET: 8, ERROR: 128 };
+export const F = { DRAW: 1, TRANS: 2, EVENT: 4, RESET: 8, MID: 16, ERROR: 128 };
 const OP = { RECT: 1, CIRC: 2, TRI: 3, DIAM: 4, LINE: 5, POINT: 6, TEXT: 7 };
 const BIND_VEL = 1, BIND_STEP = 2;
 const FONT = '"ConsoleFont", ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace';
@@ -50,7 +50,21 @@ export async function init(el) {
   return R;
 }
 
-export function configure(s) { settings = s; if (R) { buildColors(); restart(); if (on && ppu) take(0); request(); } }
+// The player changed a display setting. The clock is kept: only how frames are shown changes.
+export function configure(s) {
+  settings = s;
+  if (!R) return;
+  buildColors();
+  pace();
+  if (!glide && snaps.length > 1) snaps = [snaps[snaps.length - 1]];
+  request();
+}
+// Glide between frames (games at 20 Hz or more, if the player wants it), one tick plus the
+// measured lateness behind the newest; otherwise the newest picture at once.
+function pace() {
+  glide = settings.smooth && tickMs > 0 && tickMs <= 50;
+  bufMs = glide ? tickMs + Math.min(100, late) : 0;
+}
 export function power(state) { on = state; restart(); steps = []; sent = 0; shown.fill(0); for (const l of local) l.on = false; request(); }
 export const stats = () => ({ hz: ppu ? ppu.ppu_tick() : 0, bufMs: tickMs && glide ? bufMs : 0 });
 export const tickOnScreen = () => Math.floor(tickNow) & 255;
@@ -117,13 +131,17 @@ function take(flags) {
     snap.at[s] = f - ((f - R.t0[s]) & 0xFFFF);                       // the tick this slot's motion counts from
   }
 
-  if (tickMs) {                                                       // the clock: local time of tick 0, from the fastest packets
+  // The clock: local time of tick 0, read from the fastest tick packets. A packet made
+  // between two ticks (an answer to an input) arrives at any moment and is not a beat.
+  // Until the first beat comes, any packet gives a first guess; it can only be late, and
+  // the first beat corrects it.
+  const beat = !(flags & F.MID);
+  if (tickMs && (beat || base === null)) {
     const off = now - f * tickMs;
     if (base === null || off < base) base = off; else base += 0.01;   // follow slow drift
-    late = Math.max(late * 0.99, off - base);                         // how late packets get
+    if (beat) late = Math.max(late * 0.99, off - base);               // how late packets get
   }
-  glide = settings.smooth && hz >= 20;
-  bufMs = glide ? tickMs + Math.min(100, late) : 0;
+  pace();
   const tail = snaps[snaps.length - 1];
   if (!glide) snaps = [snap];                                         // slow games: the newest picture, at once
   else if (tail && tail.f === f) snaps[snaps.length - 1] = snap;      // more from the same tick

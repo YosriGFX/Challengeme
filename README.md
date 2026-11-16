@@ -150,6 +150,7 @@ One WebSocket binary message = one packet = a row of records, applied whole or n
 | `FRAME` 0x02 | 3 | `[lo][hi]` the server tick of this packet; always first |
 | `RESET` 0x01 | 1 | forget OPs, strings, motion, bindings (join / resync) |
 | `ACK` 0x03 | 2 | `[n]` inputs of this player handled since they joined |
+| `MID` 0x04 | 1 | made between two ticks (an input was answered): not a beat of the server's clock |
 | `OPS_LIST` 0x10 | 2 + n×9 | `[n]` then `[slot][8 B]` each |
 | `OPS_MASK` 0x11 | 33 + n×8 | 256-bit dirty mask, then the changed slots (from 32 slots) |
 | `MOVE` 0x12 | 2 + n×7 | `[n]` then `[slot][fx][fy][vx lo][vx hi][vy lo][vy hi]` |

@@ -11,6 +11,8 @@
 #define W_RESET    0x01  /* forget OPs, strings, motion and bindings (join / resync)   */
 #define W_FRAME    0x02  /* [lo][hi]  the server tick this packet belongs to; first    */
 #define W_ACK      0x03  /* [n]  inputs of this player handled since they joined       */
+#define W_MID      0x04  /* made between two ticks (an input was answered, or a join): */
+                         /* its arrival time says nothing about the server's clock     */
 #define W_OPS_LIST 0x10  /* [n] then n x ([slot][8 B])                                 */
 #define W_OPS_MASK 0x11  /* [32 B dirty mask] then the changed slots, 8 B each         */
 #define W_MOVE     0x12  /* [n] then n x ([slot][fx][fy][vx lo][vx hi][vy lo][vy hi])  */

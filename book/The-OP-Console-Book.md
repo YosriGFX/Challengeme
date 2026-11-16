@@ -154,7 +154,9 @@ type byte. Two rules hold for every packet:
 - Every value is **absolute**, never a difference from before. A packet that is lost with its
   connection is repaired by a full dump, not by replaying history.
 
-Every packet starts with `FRAME`, the server tick it belongs to. `RESET` starts a full dump.
+Every packet starts with `FRAME`, the server tick it belongs to. `MID` after it says the packet
+was made between two ticks, as the answer to an input: the client uses only tick packets to read
+the server's clock. `RESET` starts a full dump.
 `OPS_LIST` carries up to 31 changed slots as `[slot][8 bytes]`; from 32 slots on, `OPS_MASK`
 is smaller: a 256-bit mask says which slots follow. `MOVE`, `BIND` and `ACK` belong to chapters
 10 and 11. `STR` sets a string. `BEGIN` ... `END` wrap a transition. `SFX` and `MUSIC` are

@@ -78,6 +78,7 @@ EXPORT(ppu_view) u8 *ppu_view(u32 tick) {
 #define F_TRANS 2   /* a transition was applied                 */
 #define F_EVENT 4   /* sound events are waiting                 */
 #define F_RESET 8   /* a full dump: forget what came before     */
+#define F_MID   16  /* made between two ticks: not a clock beat */
 #define F_ERROR 128 /* malformed packet, nothing applied        */
 
 static u8 text(u8 c) { return (c >= 0x20 && c <= 0x7E) ? c : '?'; }
@@ -105,6 +106,7 @@ EXPORT(ppu_apply) u32 ppu_apply(u32 len) {
       flags |= F_DRAW | F_RESET; break;
     case W_FRAME: NEED(2); work.frame = (u16)(rx[i] | (rx[i + 1] << 8)); i += 2; break;
     case W_ACK: NEED(1); work.ack = rx[i++]; break;
+    case W_MID: flags |= F_MID; break;
     case W_OPS_LIST: {
       NEED(1); u32 n = rx[i++]; NEED(n * 9);
       while (n--) { write_slot(rx[i], &rx[i + 1]); i += 9; }
