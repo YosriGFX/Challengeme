@@ -15,7 +15,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const PORT = Number(process.env.PORT) || 8787;
 const JITTER = Number(process.env.JITTER_MS) || 0;
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.wasm': 'application/wasm', '.json': 'application/json', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
 
 const cartFile = (id) => path.join(ROOT, 'dist', id + '.wasm');
@@ -29,6 +29,12 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname === '/api/carts') return json(res, catalog());
   if (url.pathname === '/api/session') return json(res, { user: 'local' });
+  const keep = url.pathname.match(/^\/offline\/([a-z0-9_-]{1,32})\.wasm$/);
+  if (keep) {                                                // a game its owner lets a device keep and host
+    if (!catalog().find((c) => c.id === keep[1])?.offline) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'content-type': TYPES['.wasm'], 'cache-control': 'no-store' });
+    return res.end(fs.readFileSync(cartFile(keep[1])));
+  }
   const log = url.pathname.match(/^\/api\/log\/([a-z0-9_-]{1,32})\/([A-Za-z0-9_-]{1,32})$/);
   if (log) {                                                 // the record of a running match, for games that hide nothing
     const open = catalog().find((c) => c.id === log[1])?.open, running = matches.get(log[1] + '/' + log[2]);

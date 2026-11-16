@@ -116,22 +116,27 @@ setInterval(() => {
   statBytes = statPkts = 0;
 }, 1000);
 
-// ---------------------------------------------------------------- the network thread
-const net = new Worker('net.js');
-net.onmessage = (e) => {
+// ---------------------------------------------------------------- where the match runs
+// Two threads speak the same messages. `cloud` (net.js) owns the WebSocket to the server.
+// `here` (local.js) hosts the match on this device, for the games allowed to be kept on it.
+const cloud = new Worker('net.js');
+let here = null, net = cloud;
+function fromHost(e) {
+  if (e.target !== net) return;              // a late word from the thread that is not in use
   const m = e.data;
   if (m.t === 'pkt') { if (inMatch) onPacket(m.buf); }
   else if (m.t === 'open') {
     online = true; count = m.resent ? 1 : 0;
     screen.link(true, m.resent);
-    $('led').classList.add('on'); $('net').textContent = 'ONLINE';
+    $('led').classList.add('on'); $('net').textContent = net === cloud ? 'ONLINE' : 'ON THIS PHONE';
   } else if (m.t === 'close') {
     online = false;
     screen.link(false);
-    $('led').classList.remove('on'); $('net').textContent = inMatch ? 'RECONNECTING' : 'OFFLINE';
-    if (inMatch) session();                  // a lost session would refuse every retry
+    $('led').classList.remove('on'); $('net').textContent = !inMatch ? 'OFFLINE' : net === cloud ? 'RECONNECTING' : 'NOT ON THIS PHONE YET';
+    if (inMatch && net === cloud) session(); // a lost session would refuse every retry
   }
-};
+}
+cloud.onmessage = fromHost;
 
 // While a match is open the screen stays on: a phone that dims and locks while its player
 // thinks about a move drops the socket and leaves the other player waiting. The browser
@@ -190,7 +195,10 @@ function tabId() {                           // tells two tabs of the same playe
   } catch { return Math.random().toString(36).slice(2); }
 }
 
-function startMatch(cart) {
+// onPhone: host the match on this device (two players, one phone) instead of on the server.
+function startMatch(cart, onPhone = false) {
+  if (onPhone && !here) { here = new Worker('local.js', { type: 'module' }); here.onmessage = fromHost; }
+  net = onPhone ? here : cloud;
   const room = ($('room').value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') || 'ROOM1').slice(0, 12);
   $('room').value = room;
   try { history.replaceState(null, '', `?room=${room}`); } catch {}
@@ -244,14 +252,22 @@ async function useLinkCode() {
 
 async function loadLobby() {
   await session();
-  let carts = [];
+  let carts = null;
   try { const r = await fetch('/api/carts'); if (r.ok) carts = await r.json(); } catch {}
-  const rows = carts.map((c) => (c.owned === false
+  const connected = carts !== null;
+  if (connected) { try { localStorage.setItem('op-carts', JSON.stringify(carts)); } catch {} }
+  else { try { carts = JSON.parse(localStorage.getItem('op-carts') || '[]'); } catch { carts = []; } }      // the list as last seen
+  const kept = carts.filter((c) => c.offline && c.owned !== false);     // games this phone may host itself
+  const rows = !connected ? [] : carts.map((c) => (c.owned === false
     ? { text: c.name, note: `${(c.price_cents / 100).toFixed(2)} ${(c.currency || '').toUpperCase()}`, cls: 'locked', act: () => buy(c.id) }
     : { text: c.name, note: `${c.players}P · ${c.tick_hz} HZ`, act: () => startMatch(c.id) }));
-  if (carts.length) rows.push({ text: 'LINK A DEVICE', note: 'SHOW CODE', act: showLinkCode }, { text: 'LINK A DEVICE', note: 'ENTER CODE', act: useLinkCode });
+  for (const c of kept) {
+    rows.push({ text: c.name, note: 'ON THIS PHONE', act: () => startMatch(c.id, true) });
+    if (connected) fetch(`offline/${c.id}.wasm`).catch(() => {});       // the service worker keeps it for when there is no network
+  }
+  if (connected) rows.push({ text: 'LINK A DEVICE', note: 'SHOW CODE', act: showLinkCode }, { text: 'LINK A DEVICE', note: 'ENTER CODE', act: useLinkCode });
   lobby.set(rows);
-  $('hint').textContent = carts.length ? 'SAME ROOM = SAME MATCH' : 'NO CONNECTION';
+  $('hint').textContent = connected ? 'SAME ROOM = SAME MATCH' : kept.length ? 'NO CONNECTION: ONE PHONE, TWO PLAYERS' : 'NO CONNECTION';
 }
 
 // ---------------------------------------------------------------- boot

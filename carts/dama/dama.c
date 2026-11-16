@@ -318,6 +318,9 @@ void cart_sys(u8 p, u8 code) {
   if (code == SYS_RESIGN && state == S_PLAY) end_game((u8)(1 - p));
 }
 
+u8 cart_turn(void)   { return state == S_PLAY ? turn : 255; }
+u8 cart_result(void) { return state == S_OVER ? winner : 255; }       /* NOBODY (2) is a draw */
+
 void cart_input(u8 p, u8 now, u8 prev) {
   u8 pressed = (u8)(now & ~prev);
   u8 act = IN_ACTION(now) != IN_ACTION(prev) ? IN_ACTION(now) : 0;

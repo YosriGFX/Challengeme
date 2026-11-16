@@ -110,7 +110,13 @@ void con_sfx(u8 view_mask, u8 id) {
 void con_music(u8 cmd, u8 pattern) { music_cmd = cmd; music_pat = pattern; music_dirty = 0xFF; }
 u8 con_input_age(void) { return age; }
 
+/* what a cartridge gets when it does not define the optional callbacks */
+__attribute__((weak)) u8 cart_turn(void)   { return 255; }
+__attribute__((weak)) u8 cart_result(void) { return 255; }
+
 /* ==== host API ========================================================= */
+EXPORT(con_turn)    u32  con_turn(void)    { return cart_turn(); }
+EXPORT(con_result)  u32  con_result(void)  { return cart_result(); }
 EXPORT(con_init)    void con_init(void)    { cart_init(); }
 EXPORT(con_players) u32  con_players(void) { return cart_players; }
 EXPORT(con_tick_hz) u32  con_tick_hz(void) { return tick_hz; }

@@ -1,1 +1,1 @@
-{ "id": "dama", "name": "DAMA", "players": 2, "tick_hz": 10, "open": true }
+{ "id": "dama", "name": "DAMA", "players": 2, "tick_hz": 10, "open": true, "offline": true }

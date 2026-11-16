@@ -15,10 +15,13 @@ CFLAGS  := --target=wasm32 -nostdlib -ffreestanding -O2 -Wall -Wextra -fno-built
 LDFLAGS := -Wl,--no-entry -Wl,--strip-all -Wl,-z,stack-size=16384 -Wl,--initial-memory=196608
 
 CARTS   := dama pong flap keys trail
+OFFLINE := dama                 # games whose manifest says "offline": they may also be kept on a device
 SDK     := sdk/console.h sdk/wire.h sdk/runtime.c
 
 all: $(CARTS:%=dist/%.wasm) public/ppu.wasm
 	@mkdir -p worker/src/carts && cp dist/*.wasm worker/src/carts/
+	@for g in $(OFFLINE); do cp dist/$$g.wasm worker/src/carts/$$g.bin; done
+	@cp host/match.mjs public/match.mjs
 	@echo "built: $^"
 
 dist/%.wasm: carts/%/*.c $(SDK)
@@ -53,7 +56,7 @@ deploy:
 	cd worker && npx wrangler deploy
 
 clean:
-	rm -f dist/*.wasm public/ppu.wasm worker/src/carts/*.wasm
+	rm -f dist/*.wasm public/ppu.wasm public/match.mjs worker/src/carts/*.wasm worker/src/carts/*.bin
 	rm -rf hardware/out
 
 .PHONY: all font hardware esp32-check run dev deploy clean

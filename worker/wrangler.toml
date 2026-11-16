@@ -25,6 +25,12 @@ new_sqlite_classes = ["MatchDO"]
 tag = "v2"
 new_sqlite_classes = ["RegistryDO"]
 
+# A game that may be kept on a device is also bundled as plain bytes (see GET /offline/...).
+[[rules]]
+type = "Data"
+globs = ["**/*.bin"]
+fallthrough = true
+
 [vars]
 CURRENCY = "usd"
 

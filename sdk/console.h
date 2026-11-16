@@ -139,6 +139,14 @@ void cart_sys(u8 player, u8 code);
 void cart_tick(void);                               /* tick-rate times a second */
 void cart_draw(u8 view);                            /* view < cart_players: that player; else spectator */
 
+/* Optional: a cartridge may define these too. Without them the answers are "nobody" and
+ * "still running".
+ *   cart_turn   the seat that must act now, or 255 when nobody in particular. A device that
+ *               hosts a match for two players on one screen shows that seat's view.
+ *   cart_result 255 while the match runs; then the winning seat, or cart_players for a draw. */
+u8 cart_turn(void);
+u8 cart_result(void);
+
 /* ==== shared arithmetic: runtime and PPU must agree bit for bit ======= */
 static inline i32 con_floor8(i32 v) { return v >= 0 ? v >> 8 : -((255 - v) >> 8); }     /* floor(v / 256) */
 static inline u8  con_clamp8(i32 v) { return (u8)(v < 0 ? 0 : v > 255 ? 255 : v); }

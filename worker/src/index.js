@@ -6,6 +6,7 @@
 //   POST /api/link/use            { code }: this device becomes that account
 //   GET  /api/carts               the catalog, with price and whether this user may play
 //   WS   /match/<cart>/<room>     upgraded here, then handed to that match's Durable Object
+//   GET  /offline/<cart>.wasm     a game its owner lets a device keep, to host a match itself
 //   POST /api/buy                 { cart } -> { url } of a Stripe Checkout page
 //   POST /api/stripe              Stripe's webhook: a paid order becomes ownership
 //   POST /api/admin/cart          { cart, price_cents?, listed? }     (Bearer ADMIN_KEY)
@@ -25,6 +26,7 @@ import pongWasm from './carts/pong.wasm';
 import flapWasm from './carts/flap.wasm';
 import keysWasm from './carts/keys.wasm';
 import trailWasm from './carts/trail.wasm';
+import damaBytes from './carts/dama.bin';          // the same cartridge as bytes: its manifest says "offline"
 import damaInfo from '../../carts/dama/manifest.json';
 import pongInfo from '../../carts/pong/manifest.json';
 import flapInfo from '../../carts/flap/manifest.json';
@@ -32,7 +34,7 @@ import keysInfo from '../../carts/keys/manifest.json';
 import trailInfo from '../../carts/trail/manifest.json';
 
 const CARTS = {
-  dama: { wasm: damaWasm, info: damaInfo },
+  dama: { wasm: damaWasm, info: damaInfo, bytes: damaBytes },
   pong: { wasm: pongWasm, info: pongInfo },
   flap: { wasm: flapWasm, info: flapInfo },
   keys: { wasm: keysWasm, info: keysInfo },
@@ -157,6 +159,17 @@ app.get('/match/:cart/:room', async (c) => {
   url.searchParams.set('t', user + '.' + (url.searchParams.get('t') || '').slice(0, 64));
   const id = c.env.MATCH.idFromName(cart + '/' + room);
   return c.env.MATCH.get(id).fetch(new Request(url, c.req.raw));       // the socket now belongs to the match
+});
+
+// A game leaves the server only if its own manifest says "offline", and only to a user who
+// may play it. The device then hosts the match itself (public/local.js): two players, one
+// phone, no network. Every other game exists on the server alone.
+app.get('/offline/:file', async (c) => {
+  const cart = c.req.param('file').replace(/\.wasm$/, '');
+  if (!known(cart) || !CARTS[cart].info.offline || !CARTS[cart].bytes) return c.text('this game stays on the server', 404);
+  const user = await userOf(c);
+  if (!user || (await registry(c.env).mayPlay(user, cart)) !== 'ok') return c.text('not yours to keep', 403);
+  return new Response(CARTS[cart].bytes, { headers: { 'content-type': 'application/wasm', 'cache-control': 'no-store' } });
 });
 
 // The record of a running match: every input and its tick, and a fingerprint of the
