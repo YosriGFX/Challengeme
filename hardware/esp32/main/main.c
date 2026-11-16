@@ -1,9 +1,9 @@
 /* main.c — an OP Console client on an ESP32 with a 240 x 240 ST7789 display and 9 buttons.
  *
- * NOT COMPILED OR RUN where this was written: there was no ESP-IDF and no board. It is
- * written against ESP-IDF 5 and its esp_websocket_client component. The part that does the
- * console's work (ppu.c, raster.c) is the same code `make hardware` builds and checks on a
- * desktop; what is untried is everything in this file.
+ * NOT BUILT OR RUN where this was written: there was no ESP-IDF and no board. It is written
+ * against ESP-IDF 5 and its esp_websocket_client component. `make esp32-check` proves only
+ * that it is valid C against stand-in headers. The part that does the console's work
+ * (ppu.c, raster.c) is the same code `make hardware` builds and checks on a desktop.
  *
  *   idf.py set-target esp32s3 && idf.py build flash monitor       (in hardware/esp32)
  *
@@ -71,6 +71,7 @@ static int64_t beat_us;              /* ... and when it arrived */
 
 /* ---- Wi-Fi -------------------------------------------------------------- */
 static void on_net(void *arg, esp_event_base_t base, int32_t id, void *data) {
+  (void)arg; (void)data;
   if (base == WIFI_EVENT && (id == WIFI_EVENT_STA_START || id == WIFI_EVENT_STA_DISCONNECTED)) esp_wifi_connect();
   else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) xEventGroupSetBits(net_up, 1);
 }
@@ -109,6 +110,7 @@ static void session(void) {
 
 /* ---- the match socket ---------------------------------------------------- */
 static void on_ws(void *arg, esp_event_base_t base, int32_t id, void *data) {
+  (void)arg; (void)base;
   esp_websocket_event_data_t *d = data;
   if (id != WEBSOCKET_EVENT_DATA || d->op_code != 0x02) return;       /* binary frames only */
   if (d->payload_len > (int)sizeof packet) return;                    /* no packet is that long */

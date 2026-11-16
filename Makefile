@@ -39,6 +39,10 @@ hardware: all
 	@for g in $(CARTS); do node hardware/dump.mjs $$g 240 > hardware/out/$$g.bin && hardware/out/ref hardware/out/$$g.bin hardware/out/$$g.ppm 240; done
 	@echo "pictures: hardware/out/*.ppm"
 
+# is hardware/esp32/main/main.c valid C? (stand-in headers; a real build needs ESP-IDF and a board)
+esp32-check:
+	$(CC) -fsyntax-only -Wall -Wextra -Ihardware/esp32/check -Ihardware -Isdk -Ippu hardware/esp32/main/main.c && echo "main.c: valid C against the stand-in headers"
+
 run:
 	PORT=$(PORT) node host/sim.mjs
 
@@ -52,4 +56,4 @@ clean:
 	rm -f dist/*.wasm public/ppu.wasm worker/src/carts/*.wasm
 	rm -rf hardware/out
 
-.PHONY: all font hardware run dev deploy clean
+.PHONY: all font hardware esp32-check run dev deploy clean

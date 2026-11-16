@@ -133,7 +133,8 @@ file the browser runs as WASM), `ppu_view(tick)` gives the OP buffer at that tic
 `hardware/raster.c` draws it into RGB565 pixels with integers only, text included.
 A board adds three things around it: a WebSocket, a display to copy the frame to, and buttons.
 `hardware/esp32/` is that for an ESP32 with a 240 × 240 ST7789 display (ESP-IDF 5).
-It has not been compiled or run: there was no ESP-IDF and no board where it was written.
+It has not been built or run: there was no ESP-IDF and no board where it was written.
+`make esp32-check` checks that it is valid C against stand-in headers, nothing more.
 
 ## Match records
 
