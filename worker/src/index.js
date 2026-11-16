@@ -175,11 +175,37 @@ app.get('/offline/:file', async (c) => {
 // The record of a running match: every input and its tick, and a fingerprint of the
 // picture. Only for games that hide nothing ("open" in the manifest): with the record and
 // the cartridge anyone could work out everything the game holds.
+const hex = (bytes) => '0x' + [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
+const sha256 = async (data) => hex(await crypto.subtle.digest('SHA-256', typeof data === 'string' ? enc.encode(data) : data));
+
 app.get('/api/log/:cart/:room', async (c) => {
   const { cart, room } = c.req.param();
   if (!(await userOf(c))) return c.text('no session', 401);
   if (!known(cart) || !CARTS[cart].info.open || !/^[A-Za-z0-9_-]{1,32}$/.test(room)) return c.text('no record for this game', 404);
-  return c.env.MATCH.get(c.env.MATCH.idFromName(cart + '/' + room)).fetch(new Request(`https://match/log/${cart}`));
+  const res = await c.env.MATCH.get(c.env.MATCH.idFromName(cart + '/' + room)).fetch(new Request(`https://match/log/${cart}`));
+  if (!res.ok) return res;
+  const rec = await res.json();
+  // The three numbers a ledger holds for this match (evm/MatchLedger.sol), and where that
+  // ledger is, if the owner has deployed one.
+  if (CARTS[cart].bytes) {
+    rec.cart_sha256 = await sha256(CARTS[cart].bytes);
+    rec.log_sha256 = await sha256(JSON.stringify(rec.log));
+    rec.id = await sha256(`${rec.cart_sha256}${rec.log_sha256}/${cart}/${room}`);
+  }
+  if (c.env.LEDGER_ADDRESS) rec.ledger = { address: c.env.LEDGER_ADDRESS, chain: Number(c.env.LEDGER_CHAIN_ID) || 1 };
+  return c.json(rec, 200, { 'cache-control': 'no-store' });
+});
+
+// A player's wallet signed the result of a finished match (public/ledger.js). The match
+// keeps both signatures next to its record, so that anyone can hand them to the ledger.
+app.post('/api/sign/:cart/:room', async (c) => {
+  const { cart, room } = c.req.param();
+  const user = await userOf(c);
+  if (!user) return c.text('no session', 401);
+  if (!known(cart) || !CARTS[cart].info.open || !/^[A-Za-z0-9_-]{1,32}$/.test(room)) return c.text('no record for this game', 404);
+  const { address, signature } = await c.req.json().catch(() => ({}));
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address || '') || !/^0x[0-9a-fA-F]{130}$/.test(signature || '')) return c.text('an address and a 65-byte signature', 400);
+  return c.env.MATCH.get(c.env.MATCH.idFromName(cart + '/' + room)).fetch(new Request(`https://match/sign/${cart}`, { method: 'POST', body: JSON.stringify({ user, address, signature }) }));
 });
 
 // ---- buying: Stripe Checkout. The money never touches this Worker; Stripe tells us when
@@ -322,6 +348,7 @@ export class MatchDO extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.match = null;       // a promise, so two players joining at the same moment share one match
+    this.signed = {};        // seat -> { address, signature } for the result of this match
   }
 
   async fetch(request) {
@@ -330,11 +357,20 @@ export class MatchDO extends DurableObject {
     if (!known(cart)) return new Response('unknown game', { status: 404 });
     if (url.pathname.startsWith('/log/')) {
       if (!this.match) return new Response('no match is running', { status: 404 });
-      return Response.json({ cart, ...(await this.match).record() });
+      return Response.json({ cart, ...(await this.match).record(), signatures: this.signed });
+    }
+    if (url.pathname.startsWith('/sign/')) {
+      if (!this.match) return new Response('no match is running', { status: 404 });
+      const m = await this.match, { user, address, signature } = await request.json();
+      const seat = m.seats.findIndex((s) => s && s.id.startsWith(user + '.'));
+      if (seat < 0) return new Response('only a player of this match can sign it', { status: 403 });
+      if (m.x.con_result() === 255) return new Response('the match is not over', { status: 409 });
+      this.signed[seat] = { address, signature };
+      return Response.json({ seat, signed: Object.keys(this.signed).length });
     }
 
     this.match ??= Match.create(CARTS[cart].wasm).then((m) => {
-      m.onEmpty = () => { this.match = null; };          // everyone left: the next join starts a fresh match
+      m.onEmpty = () => { this.match = null; this.signed = {}; };      // everyone left: the next join starts a fresh match
       return m;
     });
     const match = await this.match;

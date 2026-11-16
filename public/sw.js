@@ -1,8 +1,8 @@
 // sw.js — keeps the console's shell available when the network is not. Network first, so
 // a new build is never hidden behind an old copy. Games are never stored: they do not
 // exist on the device.
-const CACHE = 'op-console-4';
-const SHELL = ['./', 'index.html', 'style.css', 'main.js', 'screen.js', 'pad.js', 'sound.js', 'chip.js', 'net.js', 'local.js', 'match.mjs', 'ppu.wasm', 'console.ttf'];
+const CACHE = 'op-console-5';
+const SHELL = ['./', 'index.html', 'style.css', 'main.js', 'screen.js', 'pad.js', 'sound.js', 'chip.js', 'net.js', 'ledger.js', 'local.js', 'match.mjs', 'ppu.wasm', 'console.ttf'];
 
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
 self.addEventListener('activate', (e) => {

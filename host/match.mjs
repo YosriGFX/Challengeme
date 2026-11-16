@@ -31,7 +31,8 @@ export class Match {
   // The match as a record: what went into the cartridge and on which tick, and a
   // fingerprint of what every player sees now. The cartridge is deterministic, so anyone
   // with the same .wasm can run the record again and must get the same fingerprint.
-  record() { return { ticks: this.ticks, log: this.log, complete: this.log.length < LOG_MAX, digest: this.x.con_digest() >>> 0 }; }
+  // result: 255 while the match runs, then the winning seat, or the number of seats for a draw.
+  record() { return { ticks: this.ticks, log: this.log, complete: this.log.length < LOG_MAX, digest: this.x.con_digest() >>> 0, result: this.x.con_result() }; }
 
   // Run a record again on a fresh cartridge. Returns the fingerprint it ends with.
   static async replay(wasm, rec) {

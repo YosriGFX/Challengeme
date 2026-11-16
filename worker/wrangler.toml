@@ -39,3 +39,5 @@ CURRENCY = "usd"
 #   STRIPE_SECRET_KEY      enables buying: POST /api/buy opens a Stripe Checkout page
 #   STRIPE_WEBHOOK_SECRET  enables POST /api/stripe, where Stripe reports a paid order
 #   SESSION_SECRET         optional: your own key for session cookies (one is made otherwise)
+# Vars for the result ledger (evm/MatchLedger.sol), once you have deployed it:
+#   LEDGER_ADDRESS = "0x..."    LEDGER_CHAIN_ID = "8453"

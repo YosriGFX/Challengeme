@@ -18,11 +18,16 @@ contract MatchLedger {
 
     uint256 private constant HALF_ORDER = 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0;
 
-    /// What each player signs (as an Ethereum signed message): this chain, this contract,
-    /// the match, the cartridge, the log and the winner (0 = player 1, 1 = player 2, 2 = draw).
+    /// What a result is, as 32 bytes: this chain, this contract, the match, the cartridge,
+    /// the log and the winner (0 = player 1, 1 = player 2, 2 = draw). A wallet signs these
+    /// bytes with personal_sign (the client asks for them with eth_call, see public/ledger.js).
+    function body(bytes32 id, bytes32 cart, bytes32 log, uint8 winner) public view returns (bytes32) {
+        return keccak256(abi.encode(block.chainid, address(this), id, cart, log, winner));
+    }
+
+    /// The same as an Ethereum signed message: what the two signatures are checked against.
     function digest(bytes32 id, bytes32 cart, bytes32 log, uint8 winner) public view returns (bytes32) {
-        bytes32 body = keccak256(abi.encode(block.chainid, address(this), id, cart, log, winner));
-        return keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", body));
+        return keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", body(id, cart, log, winner)));
     }
 
     /// Record a result. Anyone may send it; it counts only with both players' signatures.

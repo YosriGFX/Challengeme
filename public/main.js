@@ -5,6 +5,7 @@ import * as screen from './screen.js';
 import { F } from './screen.js';
 import { createPad } from './pad.js';
 import { Sound } from './sound.js';
+import { hasWallet, signResult } from './ledger.js';
 
 const $ = (id) => document.getElementById(id);
 const W_SFX = 0x40, SYS_RESIGN = 1, PATTERN_SIZE = 3 + 32 * 4;
@@ -26,6 +27,8 @@ let inMatch = false, online = false;
 let wire = 0, count = 0;                     // the byte the server has, and inputs sent since the socket opened
 let active = null;                           // the open menu (lobby or HOME), or null while playing
 let stuck = 0;                               // A / B still held from a menu: the game does not see them until released
+let playing = null;                          // { cart, room, open } of the match on screen
+let signNote = 'WITH YOUR WALLET';
 
 // ---------------------------------------------------------------- menus: stick + A / B, or a tap
 function makeMenu(box, back) {
@@ -173,6 +176,12 @@ function homeRows() {
       toggleHome(false);
     } },
     { text: 'LEAVE MATCH', act: leaveMatch },
+    // a game that hides nothing, played on the server, in a browser that has a wallet
+    ...(playing?.open && net === cloud && hasWallet() ? [{ text: 'SIGN RESULT', note: signNote, act: async () => {
+      signNote = '...'; home.set(homeRows());
+      signNote = await signResult(playing.cart, playing.room);
+      if (active === home) home.set(homeRows());
+    } }] : []),
   ];
 }
 function toggleHome(open = $('home').hidden) {
@@ -196,13 +205,14 @@ function tabId() {                           // tells two tabs of the same playe
 }
 
 // onPhone: host the match on this device (two players, one phone) instead of on the server.
-function startMatch(cart, onPhone = false) {
+function startMatch(cart, onPhone = false, open = false) {
   if (onPhone && !here) { here = new Worker('local.js', { type: 'module' }); here.onmessage = fromHost; }
   net = onPhone ? here : cloud;
   const room = ($('room').value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') || 'ROOM1').slice(0, 12);
   $('room').value = room;
   try { history.replaceState(null, '', `?room=${room}`); } catch {}
   inMatch = true; active = null; wire = 0; stuck = pad.byte & 0x30;
+  playing = { cart, room, open }; signNote = 'WITH YOUR WALLET';
   $('lobby').hidden = true; $('home').hidden = true;
   $('net').textContent = 'CONNECTING';
   screen.power(true);
@@ -260,7 +270,7 @@ async function loadLobby() {
   const kept = carts.filter((c) => c.offline && c.owned !== false);     // games this phone may host itself
   const rows = !connected ? [] : carts.map((c) => (c.owned === false
     ? { text: c.name, note: `${(c.price_cents / 100).toFixed(2)} ${(c.currency || '').toUpperCase()}`, cls: 'locked', act: () => buy(c.id) }
-    : { text: c.name, note: `${c.players}P · ${c.tick_hz} HZ`, act: () => startMatch(c.id) }));
+    : { text: c.name, note: `${c.players}P · ${c.tick_hz} HZ`, act: () => startMatch(c.id, false, c.open === true) }));
   for (const c of kept) {
     rows.push({ text: c.name, note: 'ON THIS PHONE', act: () => startMatch(c.id, true) });
     if (connected) fetch(`offline/${c.id}.wasm`).catch(() => {});       // the service worker keeps it for when there is no network
